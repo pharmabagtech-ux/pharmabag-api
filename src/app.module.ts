@@ -9,6 +9,7 @@ import { HealthModule } from './health/health.module';
 // Feature modules
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { BuyersModule } from './modules/buyers/buyers.module';
 import { SellersModule } from './modules/sellers/sellers.module';
 import { ProductsModule } from './modules/products/products.module';
 import { CartModule } from './modules/cart/cart.module';
@@ -36,6 +37,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     // Feature modules
     AuthModule,
     UsersModule,
+    BuyersModule,
     SellersModule,
     ProductsModule,
     CartModule,
