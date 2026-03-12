@@ -1,0 +1,497 @@
+// ============================================================
+// PharmaBag - B2B Pharmaceutical Marketplace
+// Production-Grade PostgreSQL Schema (Prisma ORM)
+// Designed for 100k–1M+ daily users, multi-vendor commerce
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────
+// ENUMS
+// ──────────────────────────────────────────────
+
+enum Role {
+  BUYER
+  SELLER
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  BLOCKED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum OrderStatus {
+  PLACED
+  ACCEPTED
+  SHIPPED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+// ──────────────────────────────────────────────
+// CORE IDENTITY
+// ──────────────────────────────────────────────
+
+model User {
+  id        String     @id @default(uuid())
+  phone     String     @unique
+  email     String?    @unique
+  password  String
+  role      Role
+  status    UserStatus @default(PENDING)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // One-to-one profiles
+  buyerProfile  BuyerProfile?
+  sellerProfile SellerProfile?
+  adminProfile  AdminProfile?
+
+  // Relations
+  cart          Cart?
+  orders        Order[]
+  reviews       Review[]
+  notifications Notification[]
+  tickets       Ticket[]
+  messages      Message[]
+
+  @@index([role])
+  @@index([status])
+  @@index([email])
+  @@index([phone])
+  @@map("users")
+}
+
+// ──────────────────────────────────────────────
+// BUYER PROFILE
+// ──────────────────────────────────────────────
+
+model BuyerProfile {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  legalName         String
+  gstNumber         String
+  panNumber         String
+  drugLicenseNumber String
+  drugLicenseUrl    String // S3 URL to uploaded license document
+  address           String
+  city              String
+  state             String
+  pincode           String
+  latitude          Float? // For nearby seller search
+  longitude         Float? // For nearby seller search
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([city])
+  @@index([state])
+  @@index([pincode])
+  @@map("buyer_profiles")
+}
+
+// ──────────────────────────────────────────────
+// SELLER PROFILE
+// ──────────────────────────────────────────────
+
+model SellerProfile {
+  id                 String             @id @default(uuid())
+  userId             String             @unique
+  companyName        String
+  gstNumber          String
+  panNumber          String
+  drugLicenseNumber  String
+  drugLicenseUrl     String // S3 URL to uploaded license document
+  address            String
+  city               String
+  state              String
+  pincode            String
+  isVacation         Boolean            @default(false)
+  rating             Float              @default(0)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products    Product[]
+  orderItems  OrderItem[]
+  settlements SellerSettlement[]
+
+  @@index([city])
+  @@index([state])
+  @@index([verificationStatus])
+  @@index([isVacation])
+  @@map("seller_profiles")
+}
+
+// ──────────────────────────────────────────────
+// ADMIN PROFILE
+// ──────────────────────────────────────────────
+
+model AdminProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  displayName String
+  department  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("admin_profiles")
+}
+
+// ──────────────────────────────────────────────
+// CATEGORY SYSTEM (Hierarchical)
+// ──────────────────────────────────────────────
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  subCategories SubCategory[]
+  products      Product[]
+
+  @@map("categories")
+}
+
+model SubCategory {
+  id         String   @id @default(uuid())
+  name       String
+  slug       String
+  categoryId String
+  createdAt  DateTime @default(now())
+
+  category Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([slug, categoryId])
+  @@index([categoryId])
+  @@map("sub_categories")
+}
+
+// ──────────────────────────────────────────────
+// PRODUCT CATALOG
+// ──────────────────────────────────────────────
+
+model Product {
+  id                   String    @id @default(uuid())
+  sellerId             String
+  categoryId           String
+  subCategoryId        String
+  name                 String
+  manufacturer         String
+  chemicalComposition  String
+  description          String?
+  mrp                  Float
+  gstPercent           Float
+  minimumOrderQuantity Int       @default(1)
+  maximumOrderQuantity Int?
+  isActive             Boolean   @default(true)
+  deletedAt            DateTime? // Soft delete
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  seller      SellerProfile  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category    Category       @relation(fields: [categoryId], references: [id])
+  subCategory SubCategory    @relation(fields: [subCategoryId], references: [id])
+  batches     ProductBatch[]
+  images      ProductImage[]
+  cartItems   CartItem[]
+  orderItems  OrderItem[]
+  reviews     Review[]
+
+  @@index([sellerId])
+  @@index([categoryId])
+  @@index([subCategoryId])
+  @@index([isActive])
+  @@index([name])
+  @@index([manufacturer])
+  @@index([deletedAt])
+  @@index([name, manufacturer])
+  @@index([categoryId, subCategoryId])
+  @@map("products")
+}
+
+// ──────────────────────────────────────────────
+// PRODUCT IMAGES
+// ──────────────────────────────────────────────
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  url       String // S3 URL
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+// ──────────────────────────────────────────────
+// CART SYSTEM
+// ──────────────────────────────────────────────
+
+model Cart {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int
+  unitPrice Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId]) // Prevent duplicate products in same cart
+  @@index([cartId])
+  @@index([productId])
+  @@map("cart_items")
+}
+
+// ──────────────────────────────────────────────
+// ORDER SYSTEM (Multi-Seller Support)
+// ──────────────────────────────────────────────
+
+model Order {
+  id            String        @id @default(uuid())
+  buyerId       String
+  totalAmount   Float
+  orderStatus   OrderStatus   @default(PLACED)
+  paymentStatus PaymentStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  buyer    User          @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  address  OrderAddress?
+  items    OrderItem[]
+  payments Payment[]
+
+  @@index([buyerId])
+  @@index([orderStatus])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  orderId    String
+  productId  String
+  sellerId   String
+  quantity   Int
+  unitPrice  Float
+  totalPrice Float
+  createdAt  DateTime @default(now())
+
+  order   Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product       @relation(fields: [productId], references: [id])
+  seller  SellerProfile @relation(fields: [sellerId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([sellerId])
+  @@map("order_items")
+}
+
+// ──────────────────────────────────────────────
+// PAYMENT SYSTEM
+// ──────────────────────────────────────────────
+
+model Payment {
+  id              String        @id @default(uuid())
+  orderId         String
+  amount          Float
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentProvider String? // e.g., "razorpay", "phonepe", "paytm"
+  transactionId   String?       @unique
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([paymentStatus])
+  @@index([transactionId])
+  @@map("payments")
+}
+
+// ──────────────────────────────────────────────
+// REVIEWS
+// ──────────────────────────────────────────────
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  rating    Int // 1-5
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId]) // One review per user per product
+  @@index([productId])
+  @@index([rating])
+  @@map("reviews")
+}
+
+// ──────────────────────────────────────────────
+// NOTIFICATIONS
+// ──────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ──────────────────────────────────────────────
+// SUPPORT TICKET SYSTEM
+// ──────────────────────────────────────────────
+
+model Ticket {
+  id        String       @id @default(uuid())
+  userId    String
+  subject   String
+  status    TicketStatus @default(OPEN)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("tickets")
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  ticketId  String
+  senderId  String
+  message   String
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender User   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([senderId])
+  @@map("messages")
+}
+
+// ──────────────────────────────────────────────
+// ORDER ADDRESS (Delivery snapshot)
+// ──────────────────────────────────────────────
+
+model OrderAddress {
+  id      String @id @default(uuid())
+  orderId String @unique
+  name    String
+  phone   String
+  address String
+  city    String
+  state   String
+  pincode String
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_addresses")
+}
+
+// ──────────────────────────────────────────────
+// PRODUCT BATCHES (Pharma inventory tracking)
+// ──────────────────────────────────────────────
+
+model ProductBatch {
+  id          String   @id @default(uuid())
+  productId   String
+  batchNumber String
+  expiryDate  DateTime
+  stock       Int
+  createdAt   DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([expiryDate])
+  @@map("product_batches")
+}
+
+// ──────────────────────────────────────────────
+// SELLER SETTLEMENTS (Payout tracking)
+// ──────────────────────────────────────────────
+
+model SellerSettlement {
+  id        String   @id @default(uuid())
+  sellerId  String
+  amount    Float
+  status    String // e.g., "pending", "processed", "paid"
+  createdAt DateTime @default(now())
+
+  seller SellerProfile @relation(fields: [sellerId], references: [id])
+
+  @@index([sellerId])
+  @@index([status])
+  @@map("seller_settlements")
+}
