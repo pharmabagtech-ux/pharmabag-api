@@ -48,8 +48,23 @@ enum OrderStatus {
 
 enum PaymentStatus {
   PENDING
+  PARTIAL
   SUCCESS
   FAILED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  UPI
+  COD
+  PARTIAL
+  CREDIT
+}
+
+enum PaymentVerificationStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
 }
 
 enum TicketStatus {
@@ -342,9 +357,10 @@ model OrderItem {
   totalPrice Float
   createdAt  DateTime @default(now())
 
-  order   Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product       @relation(fields: [productId], references: [id])
-  seller  SellerProfile @relation(fields: [sellerId], references: [id])
+  order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product           @relation(fields: [productId], references: [id])
+  seller     SellerProfile     @relation(fields: [sellerId], references: [id])
+  settlement SellerSettlement?
 
   @@index([orderId])
   @@index([productId])
@@ -357,20 +373,20 @@ model OrderItem {
 // ──────────────────────────────────────────────
 
 model Payment {
-  id              String        @id @default(uuid())
-  orderId         String
-  amount          Float
-  paymentStatus   PaymentStatus @default(PENDING)
-  paymentProvider String? // e.g., "razorpay", "phonepe", "paytm"
-  transactionId   String?       @unique
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id                 String                    @id @default(uuid())
+  orderId            String
+  amount             Float
+  method             PaymentMethod
+  referenceNumber    String?
+  proofUrl           String?
+  verificationStatus PaymentVerificationStatus @default(PENDING)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
-  @@index([paymentStatus])
-  @@index([transactionId])
+  @@index([verificationStatus])
   @@map("payments")
 }
 
@@ -568,15 +584,22 @@ model InventoryAlert {
 // ──────────────────────────────────────────────
 
 model SellerSettlement {
-  id        String   @id @default(uuid())
-  sellerId  String
-  amount    Float
-  status    String // e.g., "pending", "processed", "paid"
-  createdAt DateTime @default(now())
+  id              String    @id @default(uuid())
+  sellerId        String
+  orderItemId     String
+  amount          Float
+  commission      Float     @default(0)
+  payoutStatus    String    @default("PENDING") // PENDING | PROCESSED | PAID
+  payoutReference String?
+  payoutDate      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  seller SellerProfile @relation(fields: [sellerId], references: [id])
+  seller    SellerProfile @relation(fields: [sellerId], references: [id])
+  orderItem OrderItem     @relation(fields: [orderItemId], references: [id])
 
+  @@unique([orderItemId]) // One settlement per order item
   @@index([sellerId])
-  @@index([status])
+  @@index([payoutStatus])
   @@map("seller_settlements")
 }

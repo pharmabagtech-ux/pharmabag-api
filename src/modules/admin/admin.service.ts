@@ -4,7 +4,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { UserStatus } from '@prisma/client';
+import { UserStatus, OrderStatus, PaymentStatus, PaymentVerificationStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
@@ -127,5 +127,42 @@ export class AdminService {
 
     this.logger.log(`User ${userId} rejected by admin`);
     return updatedUser;
+  }
+
+  async getDashboard() {
+    const [
+      totalUsers,
+      totalBuyers,
+      totalSellers,
+      totalOrders,
+      revenueResult,
+      pendingOrders,
+      pendingPayments,
+      pendingSettlements,
+    ] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.count({ where: { role: 'BUYER' } }),
+      this.prisma.user.count({ where: { role: 'SELLER' } }),
+      this.prisma.order.count(),
+      this.prisma.order.aggregate({ _sum: { totalAmount: true } }),
+      this.prisma.order.count({ where: { orderStatus: OrderStatus.PLACED } }),
+      this.prisma.payment.count({
+        where: { verificationStatus: PaymentVerificationStatus.PENDING },
+      }),
+      this.prisma.sellerSettlement.count({
+        where: { payoutStatus: 'PENDING' },
+      }),
+    ]);
+
+    return {
+      totalUsers,
+      totalBuyers,
+      totalSellers,
+      totalOrders,
+      totalRevenue: revenueResult._sum.totalAmount ?? 0,
+      pendingOrders,
+      pendingPayments,
+      pendingSettlements,
+    };
   }
 }

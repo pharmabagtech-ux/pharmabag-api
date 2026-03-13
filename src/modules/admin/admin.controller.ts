@@ -40,4 +40,11 @@ export class AdminController {
     const data = await this.adminService.rejectUser(id);
     return { message: 'User rejected successfully', data };
   }
+
+  @Get('dashboard')
+  @HttpCode(HttpStatus.OK)
+  async getDashboard() {
+    const data = await this.adminService.getDashboard();
+    return { message: 'Dashboard metrics retrieved', data };
+  }
 }
