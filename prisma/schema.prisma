@@ -59,6 +59,11 @@ enum TicketStatus {
   CLOSED
 }
 
+enum AlertType {
+  NEAR_EXPIRY
+  OUT_OF_STOCK
+}
+
 // ──────────────────────────────────────────────
 // CORE IDENTITY
 // ──────────────────────────────────────────────
@@ -234,6 +239,11 @@ model Product {
   cartItems   CartItem[]
   orderItems  OrderItem[]
   reviews     Review[]
+
+  // Hidden infrastructure (Phase-2+)
+  searchIndex     ProductSearchIndex?
+  analytics       ProductAnalytics?
+  inventoryAlerts InventoryAlert[]
 
   @@index([sellerId])
   @@index([categoryId])
@@ -470,12 +480,87 @@ model ProductBatch {
   expiryDate  DateTime
   stock       Int
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product         Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventoryAlerts InventoryAlert[]
 
   @@index([productId])
   @@index([expiryDate])
+  @@index([productId, batchNumber])
   @@map("product_batches")
+}
+
+// ──────────────────────────────────────────────
+// PRODUCT SEARCH INDEX (Hidden — Phase-2+)
+// Fast full-text search & autocomplete
+// ──────────────────────────────────────────────
+
+model ProductSearchIndex {
+  id                  String   @id @default(uuid())
+  productId           String   @unique
+  name                String
+  manufacturer        String
+  chemicalComposition String
+  categoryName        String
+  subCategoryName     String
+  searchVector        String // Concatenated lowercase search string
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([name])
+  @@index([manufacturer])
+  @@index([searchVector])
+  @@index([categoryName])
+  @@map("product_search_index")
+}
+
+// ──────────────────────────────────────────────
+// PRODUCT ANALYTICS (Hidden — Phase-2+)
+// Trending, best-sellers, recommendations
+// ──────────────────────────────────────────────
+
+model ProductAnalytics {
+  id          String    @id @default(uuid())
+  productId   String    @unique
+  views       Int       @default(0)
+  orders      Int       @default(0)
+  lastViewed  DateTime?
+  lastOrdered DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([views])
+  @@index([orders])
+  @@index([lastViewed])
+  @@map("product_analytics")
+}
+
+// ──────────────────────────────────────────────
+// INVENTORY ALERTS (Hidden — Phase-2+)
+// Near-expiry & out-of-stock intelligence
+// ──────────────────────────────────────────────
+
+model InventoryAlert {
+  id        String    @id @default(uuid())
+  productId String
+  batchId   String?
+  alertType AlertType
+  message   String
+  createdAt DateTime  @default(now())
+
+  product Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  batch   ProductBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([batchId])
+  @@index([alertType])
+  @@index([createdAt])
+  @@map("inventory_alerts")
 }
 
 // ──────────────────────────────────────────────
