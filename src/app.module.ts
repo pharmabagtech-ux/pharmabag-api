@@ -25,6 +25,7 @@ import { StorageModule } from './modules/storage/storage.module';
 import { SettlementsModule } from './modules/settlements/settlements.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
+import { BlogModule } from './modules/blog/blog.module';
 
 @Module({
   imports: [
@@ -95,6 +96,7 @@ import { TicketsModule } from './modules/tickets/tickets.module';
     SettlementsModule,
     ReviewsModule,
     TicketsModule,
+    BlogModule,
   ],
   providers: [
     // Apply throttler guard globally
