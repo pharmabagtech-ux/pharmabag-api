@@ -36,7 +36,7 @@ async function bootstrap() {
   const allowedOrigins = configService
     .get<string>(
       'CORS_ORIGINS',
-      'http://localhost:3000,http://localhost:3001,http://localhost:5173,https://buyer.pharmabag.com,https://seller.pharmabag.com,https://admin.pharmabag.com',
+      'http://localhost:3000,http://localhost:3001,http://localhost:5173,https://buyer.pharmabag.com,https://seller.pharmabag.com,https://admin.pharmabag.com,https://pharmabag-api.onrender.com/api,https://pharmabag-api.onrender.com',
     )
     .split(',')
     .map((o) => o.trim());
