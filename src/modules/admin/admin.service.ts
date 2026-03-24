@@ -34,65 +34,70 @@ export class AdminService {
   // ════════════════════════════════════════════════════════
 
   async getDashboard() {
-    const [
-      totalUsers,
-      totalBuyers,
-      totalSellers,
-      totalOrders,
-      revenueResult,
-      pendingOrders,
-      pendingPayments,
-      pendingSettlements,
-      totalProducts,
-      openTickets,
-      blockedUsers,
-      recentOrders,
-    ] = await Promise.all([
-      this.prisma.user.count(),
-      this.prisma.user.count({ where: { role: 'BUYER' } }),
-      this.prisma.user.count({ where: { role: 'SELLER' } }),
-      this.prisma.order.count(),
-      this.prisma.order.aggregate({ _sum: { totalAmount: true } }),
-      this.prisma.order.count({ where: { orderStatus: OrderStatus.PLACED } }),
-      this.prisma.payment.count({
-        where: { verificationStatus: PaymentVerificationStatus.PENDING },
-      }),
-      this.prisma.sellerSettlement.count({
-        where: { payoutStatus: 'PENDING' },
-      }),
-      this.prisma.product.count({ where: { deletedAt: null } }),
-      this.prisma.ticket.count({
-        where: { status: { in: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS] } },
-      }),
-      this.prisma.user.count({ where: { status: UserStatus.BLOCKED } }),
-      this.prisma.order.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          totalAmount: true,
-          orderStatus: true,
-          paymentStatus: true,
-          createdAt: true,
-          buyer: { select: { id: true, phone: true } },
-        },
-      }),
-    ]);
+    try {
+      const [
+        totalUsers,
+        totalBuyers,
+        totalSellers,
+        totalOrders,
+        revenueResult,
+        pendingOrders,
+        pendingPayments,
+        pendingSettlements,
+        totalProducts,
+        openTickets,
+        blockedUsers,
+        recentOrders,
+      ] = await Promise.all([
+        this.prisma.user.count(),
+        this.prisma.user.count({ where: { role: 'BUYER' } }),
+        this.prisma.user.count({ where: { role: 'SELLER' } }),
+        this.prisma.order.count(),
+        this.prisma.order.aggregate({ _sum: { totalAmount: true } }),
+        this.prisma.order.count({ where: { orderStatus: OrderStatus.PLACED } }),
+        this.prisma.payment.count({
+          where: { verificationStatus: PaymentVerificationStatus.PENDING },
+        }),
+        this.prisma.sellerSettlement.count({
+          where: { payoutStatus: 'PENDING' },
+        }),
+        this.prisma.product.count({ where: { deletedAt: null } }),
+        this.prisma.ticket.count({
+          where: { status: { in: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS] } },
+        }),
+        this.prisma.user.count({ where: { status: UserStatus.BLOCKED } }),
+        this.prisma.order.findMany({
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            totalAmount: true,
+            orderStatus: true,
+            paymentStatus: true,
+            createdAt: true,
+            buyer: { select: { id: true, phone: true } },
+          },
+        }),
+      ]);
 
-    return {
-      totalUsers,
-      totalBuyers,
-      totalSellers,
-      blockedUsers,
-      totalOrders,
-      totalRevenue: revenueResult._sum.totalAmount ?? 0,
-      totalProducts,
-      pendingOrders,
-      pendingPayments,
-      pendingSettlements,
-      openTickets,
-      recentOrders,
-    };
+      return {
+        totalUsers,
+        totalBuyers,
+        totalSellers,
+        blockedUsers,
+        totalOrders,
+        totalRevenue: revenueResult?._sum?.totalAmount ?? 0,
+        totalProducts,
+        pendingOrders,
+        pendingPayments,
+        pendingSettlements,
+        openTickets,
+        recentOrders,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to fetch dashboard metrics: ${error.message}`, error.stack);
+      throw error; // Re-throw so NestJS returns 500 but we at least see the log on Render
+    }
   }
 
   // ════════════════════════════════════════════════════════
