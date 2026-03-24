@@ -46,7 +46,7 @@ import { MigrationModule } from './modules/migration/migration.module';
         AWS_BUCKET: Joi.string().default('pharmabag-images'),
         AWS_REGION: Joi.string().default('ap-south-1'),
         CORS_ORIGINS: Joi.string().default(
-          'http://localhost:3000,http://localhost:3001,http://localhost:5173,https://seller.pharmabag.com,https://admin.pharmabag.com,https://pharmabag-api.onrender.com/api,https://pharmabag-api.onrender.com',
+          'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:5173,https://pharmabag-web-admin.vercel.app,https://pharmabag-web-seller.vercel.app,https://seller.pharmabag.com,https://admin.pharmabag.com,https://pharmabag-api.onrender.com/api,https://pharmabag-api.onrender.com',
         ),
         PLATFORM_COMMISSION_RATE: Joi.number().default(0.05),
       }),
