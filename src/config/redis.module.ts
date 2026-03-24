@@ -8,6 +8,10 @@ import { createRedisClient, REDIS_CLIENT } from './redis.config';
     {
       provide: REDIS_CLIENT,
       useFactory: (configService: ConfigService) => {
+        const redisUrl = configService.get<string>('REDIS_URL');
+        if (redisUrl) {
+          return createRedisClient(redisUrl);
+        }
         const host = configService.get<string>('REDIS_HOST', 'localhost');
         const port = configService.get<number>('REDIS_PORT', 6379);
         return createRedisClient(host, port);

@@ -4,18 +4,28 @@ import Redis from 'ioredis';
 const logger = new Logger('RedisConfig');
 
 export const createRedisClient = (
-  host: string = 'localhost',
+  urlOrHost: string = 'localhost',
   port: number = 6379,
 ): Redis => {
-  const client = new Redis({
-    host,
-    port,
-    maxRetriesPerRequest: null, // Required for BullMQ
-    retryStrategy(times: number) {
-      const delay = Math.min(times * 50, 2000);
-      return delay;
-    },
-  });
+  const isUrl = urlOrHost.startsWith('redis://') || urlOrHost.startsWith('rediss://');
+
+  const client = isUrl
+    ? new Redis(urlOrHost, {
+        maxRetriesPerRequest: null, // Required for BullMQ
+        retryStrategy(times: number) {
+          const delay = Math.min(times * 50, 2000);
+          return delay;
+        },
+      })
+    : new Redis({
+        host: urlOrHost,
+        port,
+        maxRetriesPerRequest: null, // Required for BullMQ
+        retryStrategy(times: number) {
+          const delay = Math.min(times * 50, 2000);
+          return delay;
+        },
+      });
 
   client.on('connect', () => {
     logger.log('Redis connection established');
