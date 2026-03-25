@@ -133,7 +133,7 @@ export class AuthService {
           phone,
           password: randomPassword,
           role: suggestedRole || Role.BUYER,
-          status: UserStatus.NEW,
+          status: UserStatus.PENDING,
         },
         select: {
           id: true,
@@ -241,11 +241,7 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    // Normalize response shape for single source of truth
-    return {
-      ...user,
-      onboardingCompleted: user.status !== UserStatus.NEW,
-    };
+    return user;
   }
 
   // ─── REFRESH TOKEN ─────────────────────────────────
@@ -291,7 +287,7 @@ export class AuthService {
   private async generateTokens(userId: string, role: Role): Promise<TokenPair> {
     const payload = { sub: userId, role };
 
-    const accessExpiresIn = this.configService.get<string>('JWT_ACCESS_EXPIRES', '7d');
+    const accessExpiresIn = this.configService.get<string>('JWT_ACCESS_EXPIRES', '15m');
     const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES', '7d');
 
     const [accessToken, refreshToken] = await Promise.all([

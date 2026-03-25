@@ -152,7 +152,9 @@ export class SellersService {
       where: { sellerId: seller.id },
       take: 5,
       orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
+        quantity: true,
+        totalPrice: true,
         product: { select: { name: true } },
         order: {
           select: {
