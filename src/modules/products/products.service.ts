@@ -511,6 +511,38 @@ export class ProductsService {
   }
 
   /**
+   * Get product name suggestions for autocomplete.
+   */
+  async getSuggestions(query: string) {
+    if (!query || query.trim().length < 2) {
+      return [];
+    }
+
+    const q = query.trim();
+
+    const products = await this.prisma.product.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { manufacturer: { contains: q, mode: 'insensitive' } },
+          { chemicalComposition: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        manufacturer: true,
+        slug: true,
+      },
+      take: 10,
+      orderBy: { name: 'asc' },
+    });
+
+    return products;
+  }
+
+  /**
    * List all categories (public).
    */
   async getCategories() {
