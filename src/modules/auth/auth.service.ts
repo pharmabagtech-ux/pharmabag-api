@@ -291,7 +291,7 @@ export class AuthService {
   private async generateTokens(userId: string, role: Role): Promise<TokenPair> {
     const payload = { sub: userId, role };
 
-    const accessExpiresIn = this.configService.get<string>('JWT_ACCESS_EXPIRES', '15m');
+    const accessExpiresIn = this.configService.get<string>('JWT_ACCESS_EXPIRES', '7d');
     const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES', '7d');
 
     const [accessToken, refreshToken] = await Promise.all([

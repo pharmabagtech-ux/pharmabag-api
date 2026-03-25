@@ -5,7 +5,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ProductApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { InventoryService } from './services/inventory.service';
 import { SearchIndexService } from './services/search-index.service';
@@ -123,6 +123,8 @@ export class ProductsService {
       maximumOrderQuantity: normalized.maximumOrderQuantity,
       discountType: normalized.discountType,
       discountMeta: normalized.discountMeta ?? undefined,
+      approvalStatus: ProductApprovalStatus.PENDING,
+      isActive: false, // Products start inactive until admin approves
     };
 
     const product = await this.prisma.product.create({
@@ -439,6 +441,7 @@ export class ProductsService {
 
     const where: Prisma.ProductWhereInput = {
       isActive: true,
+      approvalStatus: ProductApprovalStatus.APPROVED,
       deletedAt: null,
     };
 

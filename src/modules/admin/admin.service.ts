@@ -9,6 +9,7 @@ import {
   OrderStatus,
   PaymentStatus,
   PaymentVerificationStatus,
+  ProductApprovalStatus,
   TicketStatus,
   Prisma,
 } from '@prisma/client';
@@ -295,7 +296,7 @@ export class AdminService {
   // ════════════════════════════════════════════════════════
 
   async getAllProducts(query: AdminQueryProductsDto) {
-    const { sellerId, categoryId, subCategoryId, search, isActive, page = 1, limit = 20 } = query;
+    const { sellerId, categoryId, subCategoryId, search, isActive, approvalStatus, page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
     const where: Prisma.ProductWhereInput = { deletedAt: null };
@@ -304,6 +305,9 @@ export class AdminService {
     if (subCategoryId) where.subCategoryId = subCategoryId;
     if (isActive === 'true') where.isActive = true;
     if (isActive === 'false') where.isActive = false;
+    if (approvalStatus && ['PENDING', 'APPROVED', 'REJECTED'].includes(approvalStatus.toUpperCase())) {
+      where.approvalStatus = approvalStatus.toUpperCase() as ProductApprovalStatus;
+    }
 
     if (search) {
       where.OR = [
@@ -323,6 +327,8 @@ export class AdminService {
           mrp: true,
           gstPercent: true,
           isActive: true,
+          approvalStatus: true,
+          rejectionReason: true,
           createdAt: true,
           updatedAt: true,
           seller: { select: { id: true, companyName: true, userId: true } },
@@ -409,6 +415,54 @@ export class AdminService {
     });
 
     this.logger.log(`Product ${productId} soft-deleted by admin`);
+    return updated;
+  }
+
+  async approveProduct(productId: string) {
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new NotFoundException('Product not found');
+    if (product.approvalStatus === ProductApprovalStatus.APPROVED) {
+      throw new BadRequestException('Product is already approved');
+    }
+
+    const updated = await this.prisma.product.update({
+      where: { id: productId },
+      data: {
+        approvalStatus: ProductApprovalStatus.APPROVED,
+        isActive: true,
+        rejectionReason: null,
+      },
+      select: {
+        id: true, name: true, isActive: true, approvalStatus: true, updatedAt: true,
+        seller: { select: { id: true, companyName: true } },
+      },
+    });
+
+    this.logger.log(`Product ${productId} approved by admin`);
+    return updated;
+  }
+
+  async rejectProduct(productId: string, reason?: string) {
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new NotFoundException('Product not found');
+    if (product.approvalStatus === ProductApprovalStatus.REJECTED) {
+      throw new BadRequestException('Product is already rejected');
+    }
+
+    const updated = await this.prisma.product.update({
+      where: { id: productId },
+      data: {
+        approvalStatus: ProductApprovalStatus.REJECTED,
+        isActive: false,
+        rejectionReason: reason || null,
+      },
+      select: {
+        id: true, name: true, isActive: true, approvalStatus: true, rejectionReason: true, updatedAt: true,
+        seller: { select: { id: true, companyName: true } },
+      },
+    });
+
+    this.logger.log(`Product ${productId} rejected by admin${reason ? `: ${reason}` : ''}`);
     return updated;
   }
 

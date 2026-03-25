@@ -88,89 +88,10 @@ enum DiscountType {
   PTR_PLUS_DIFFERENT_PRODUCT_BONUS
 }
 
-// ──────────────────────────────────────────────
-// MIGRATION TRACKING
-// ──────────────────────────────────────────────
-
-enum MigrationEntityType {
-  USER
-  ORDER
-  PAYMENT
-  ORDER_ITEM
-  SETTLEMENT
-}
-
-enum MigrationStatus {
-  RUNNING
-  COMPLETED
-  FAILED
-  ROLLED_BACK
-}
-
-enum MigrationRecordStatus {
-  SUCCESS
-  SKIPPED
-  FAILED
-}
-
-/// Tracks each migration batch run for auditability and rollback
-model MigrationRun {
-  id          String          @id @default(uuid())
-  entityType  MigrationEntityType
-  status      MigrationStatus @default(RUNNING)
-  totalRecords Int            @default(0)
-  successCount Int            @default(0)
-  failedCount  Int            @default(0)
-  skippedCount Int            @default(0)
-  metadata    Json?           // Run-level metadata (source file, operator, etc.)
-  errorSummary String?        // Aggregated error summary
-  startedAt   DateTime        @default(now())
-  completedAt DateTime?
-  rolledBackAt DateTime?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-
-  records MigrationRecord[]
-
-  @@index([entityType])
-  @@index([status])
-  @@index([startedAt])
-  @@map("migration_runs")
-}
-
-/// Per-record audit log for migration — enables rollback and debugging
-model MigrationRecord {
-  id             String                @id @default(uuid())
-  runId          String
-  entityType     MigrationEntityType
-  legacyId       String                // Original ID from legacy system
-  newId          String?               // New UUID in Pharmabag v2
-  status         MigrationRecordStatus @default(SUCCESS)
-  errorMessage   String?
-  rawData        Json?                 // Original legacy record (for debugging)
-  createdAt      DateTime              @default(now())
-
-  run MigrationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-
-  @@unique([entityType, legacyId])     // Prevent duplicate imports
-  @@index([runId])
-  @@index([entityType, legacyId])
-  @@index([entityType, newId])
-  @@index([status])
-  @@map("migration_records")
-}
-
-/// Lookup table mapping legacy IDs to new v2 UUIDs (fast O(1) resolution)
-model MigrationIdMap {
-  id         String              @id @default(uuid())
-  entityType MigrationEntityType
-  legacyId   String              // Legacy system ID
-  newId      String              // New Pharmabag v2 UUID
-  createdAt  DateTime            @default(now())
-
-  @@unique([entityType, legacyId])
-  @@index([entityType, newId])
-  @@map("migration_id_map")
+enum ProductApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 // ──────────────────────────────────────────────
@@ -184,7 +105,6 @@ model User {
   password  String
   role      Role
   status    UserStatus @default(NEW)
-  legacyId  String?    @unique // Legacy system ID for migration traceability
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
@@ -317,7 +237,6 @@ model SubCategory {
   products Product[]
 
   @@unique([slug, categoryId])
-  @@unique([name, categoryId])
   @@index([categoryId])
   @@map("sub_categories")
 }
@@ -327,26 +246,28 @@ model SubCategory {
 // ──────────────────────────────────────────────
 
 model Product {
-  id                   String        @id @default(uuid())
+  id                   String                @id @default(uuid())
   sellerId             String
   categoryId           String
   subCategoryId        String
   name                 String
-  slug                 String?       @unique
-  externalId           String?       @unique // Legacy MongoDB ObjectId for migration idempotency
+  slug                 String?               @unique
+  externalId           String?               @unique
   manufacturer         String
   chemicalComposition  String
   description          String?
   mrp                  Float
   gstPercent           Float
-  minimumOrderQuantity Int           @default(1)
+  minimumOrderQuantity Int                   @default(1)
   maximumOrderQuantity Int?
   discountType         DiscountType?
-  discountMeta         Json?         // Flexible JSON for discount parameters
-  isActive             Boolean       @default(true)
-  deletedAt            DateTime?     // Soft delete
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  discountMeta         Json?
+  approvalStatus       ProductApprovalStatus @default(PENDING)
+  rejectionReason      String?
+  isActive             Boolean               @default(false)
+  deletedAt            DateTime?             // Soft delete
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   seller      SellerProfile  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   category    Category       @relation(fields: [categoryId], references: [id])
@@ -366,6 +287,7 @@ model Product {
   @@index([categoryId])
   @@index([subCategoryId])
   @@index([isActive])
+  @@index([approvalStatus])
   @@index([name])
   @@index([manufacturer])
   @@index([deletedAt])
@@ -435,7 +357,6 @@ model Order {
   totalAmount   Float
   orderStatus   OrderStatus   @default(PLACED)
   paymentStatus PaymentStatus @default(PENDING)
-  legacyId      String?       @unique // Legacy system order ID
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -459,7 +380,6 @@ model OrderItem {
   quantity   Int
   unitPrice  Float
   totalPrice Float
-  legacyId   String?  @unique // Legacy system order item ID
   createdAt  DateTime @default(now())
 
   order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -485,7 +405,6 @@ model Payment {
   referenceNumber    String?
   proofUrl           String?
   verificationStatus PaymentVerificationStatus @default(PENDING)
-  legacyId           String?                   @unique // Legacy system payment ID
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
 
@@ -708,81 +627,4 @@ model SellerSettlement {
   @@index([sellerId])
   @@index([payoutStatus])
   @@map("seller_settlements")
-}
-
-// ──────────────────────────────────────────────
-// BLOG SYSTEM (SEO-Optimized CMS)
-// ──────────────────────────────────────────────
-
-enum BlogStatus {
-  DRAFT
-  PUBLISHED
-}
-
-model BlogAuthor {
-  id        String   @id @default(uuid())
-  name      String
-  bio       String?
-  avatar    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  posts BlogPost[]
-
-  @@map("blog_authors")
-}
-
-model BlogCategory {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  posts BlogPost[]
-
-  @@map("blog_categories")
-}
-
-model BlogPost {
-  id              String     @id @default(uuid())
-  title           String
-  slug            String     @unique
-  excerpt         String?
-  content         Json       // Editor.js JSON or rich text
-  featuredImage   String?
-  images          String[]   @default([])
-
-  authorId        String
-  categoryId      String
-  tags            String[]   @default([])
-
-  status          BlogStatus @default(DRAFT)
-
-  // SEO Fields
-  metaTitle       String?
-  metaDescription String?
-  metaKeywords    String[]   @default([])
-  canonicalUrl    String?
-  ogImage         String?
-
-  // Analytics / UX
-  readingTime     Int        @default(0)
-  views           Int        @default(0)
-
-  publishedAt     DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-
-  author   BlogAuthor   @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  category BlogCategory @relation(fields: [categoryId], references: [id])
-
-  @@index([slug])
-  @@index([status])
-  @@index([authorId])
-  @@index([categoryId])
-  @@index([publishedAt])
-  @@index([views])
-  @@index([status, publishedAt])
-  @@map("blog_posts")
 }

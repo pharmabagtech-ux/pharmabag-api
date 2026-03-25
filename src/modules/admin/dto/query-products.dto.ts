@@ -28,6 +28,11 @@ export class AdminQueryProductsDto {
   @IsString()
   isActive?: string;
 
+  @ApiPropertyOptional({ example: 'PENDING', description: 'Filter by approval status (PENDING/APPROVED/REJECTED)' })
+  @IsOptional()
+  @IsString()
+  approvalStatus?: string;
+
   @ApiPropertyOptional({ example: 1, default: 1, description: 'Page number' })
   @IsOptional()
   @Type(() => Number)

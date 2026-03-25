@@ -168,6 +168,31 @@ export class AdminController {
     return { message: 'Product enabled successfully', data };
   }
 
+  @Patch('products/:id/approve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approve a product (sets approvalStatus=APPROVED, isActive=true)' })
+  @ApiResponse({ status: 200, description: 'Product approved' })
+  @ApiResponse({ status: 400, description: 'Product is already approved' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  async approveProduct(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.adminService.approveProduct(id);
+    return { message: 'Product approved successfully', data };
+  }
+
+  @Patch('products/:id/reject')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reject a product (sets approvalStatus=REJECTED, isActive=false)' })
+  @ApiResponse({ status: 200, description: 'Product rejected' })
+  @ApiResponse({ status: 400, description: 'Product is already rejected' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  async rejectProduct(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { reason?: string },
+  ) {
+    const data = await this.adminService.rejectProduct(id, body.reason);
+    return { message: 'Product rejected successfully', data };
+  }
+
   @Delete('products/:id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Soft-delete a product (sets deletedAt + isActive=false)' })
