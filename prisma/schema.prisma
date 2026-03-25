@@ -94,6 +94,32 @@ enum ProductApprovalStatus {
   REJECTED
 }
 
+enum BlogStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum MigrationEntityType {
+  USER
+  ORDER
+  PAYMENT
+  ORDER_ITEM
+  SETTLEMENT
+}
+
+enum MigrationStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  ROLLED_BACK
+}
+
+enum MigrationRecordStatus {
+  SUCCESS
+  SKIPPED
+  FAILED
+}
+
 // ──────────────────────────────────────────────
 // CORE IDENTITY
 // ──────────────────────────────────────────────
@@ -120,6 +146,7 @@ model User {
   notifications Notification[]
   tickets       Ticket[]
   messages      Message[]
+  legacyId      String?        @unique
 
   @@index([role])
   @@index([status])
@@ -360,6 +387,8 @@ model Order {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
+  legacyId      String?        @unique
+
   buyer    User          @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   address  OrderAddress?
   items    OrderItem[]
@@ -381,6 +410,8 @@ model OrderItem {
   unitPrice  Float
   totalPrice Float
   createdAt  DateTime @default(now())
+
+  legacyId   String?   @unique
 
   order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product    Product           @relation(fields: [productId], references: [id])
@@ -407,6 +438,8 @@ model Payment {
   verificationStatus PaymentVerificationStatus @default(PENDING)
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
+
+  legacyId           String?                   @unique
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -627,4 +660,130 @@ model SellerSettlement {
   @@index([sellerId])
   @@index([payoutStatus])
   @@map("seller_settlements")
+}
+
+// ──────────────────────────────────────────────
+// BLOG SYSTEM
+// ──────────────────────────────────────────────
+
+model BlogAuthor {
+  id        String   @id @default(uuid())
+  name      String
+  bio       String?
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts BlogPost[]
+
+  @@map("blog_authors")
+}
+
+model BlogCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts BlogPost[]
+
+  @@map("blog_categories")
+}
+
+model BlogPost {
+  id              String     @id @default(uuid())
+  title           String
+  slug            String     @unique
+  excerpt         String?
+  content         Json
+  featuredImage   String?
+  images          String[]   @default([])
+  authorId        String
+  categoryId      String
+  tags            String[]   @default([])
+  status          BlogStatus @default(DRAFT)
+  metaTitle       String?
+  metaDescription String?
+  metaKeywords    String[]   @default([])
+  canonicalUrl    String?
+  ogImage         String?
+  readingTime     Int        @default(0)
+  views           Int        @default(0)
+  publishedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  author   BlogAuthor   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category BlogCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([slug])
+  @@index([status])
+  @@index([authorId])
+  @@index([categoryId])
+  @@index([publishedAt])
+  @@index([views])
+  @@index([status, publishedAt])
+  @@map("blog_posts")
+}
+
+// ──────────────────────────────────────────────
+// MIGRATION PIPELINE
+// ──────────────────────────────────────────────
+
+model MigrationRun {
+  id           String              @id @default(uuid())
+  entityType   MigrationEntityType
+  status       MigrationStatus     @default(RUNNING)
+  totalRecords Int                 @default(0)
+  successCount Int                 @default(0)
+  failedCount  Int                 @default(0)
+  skippedCount Int                 @default(0)
+  metadata     Json?
+  errorSummary String?
+  startedAt    DateTime            @default(now())
+  completedAt  DateTime?
+  rolledBackAt DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  records MigrationRecord[]
+
+  @@index([entityType])
+  @@index([status])
+  @@index([startedAt])
+  @@map("migration_runs")
+}
+
+model MigrationRecord {
+  id           String                @id @default(uuid())
+  runId        String
+  entityType   MigrationEntityType
+  legacyId     String
+  newId        String?
+  status       MigrationRecordStatus @default(SUCCESS)
+  errorMessage String?
+  rawData      Json?
+  createdAt    DateTime              @default(now())
+
+  run MigrationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([entityType, legacyId])
+  @@index([runId])
+  @@index([entityType, legacyId])
+  @@index([entityType, newId])
+  @@index([status])
+  @@map("migration_records")
+}
+
+model MigrationIdMap {
+  id         String              @id @default(uuid())
+  entityType MigrationEntityType
+  legacyId   String
+  newId      String
+  createdAt  DateTime            @default(now())
+
+  @@unique([entityType, legacyId])
+  @@index([entityType, newId])
+  @@map("migration_id_map")
 }
