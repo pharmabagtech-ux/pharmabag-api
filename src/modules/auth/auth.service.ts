@@ -74,17 +74,24 @@ export class AuthService {
 
     // Send OTP via Nimbus IT SMS service
     try {
+      console.log(`[AUTH-SERVICE] sendOtp called for phone: ${phone}`);
+      console.log(`[AUTH-SERVICE] Checking if OTP service is configured...`);
+      
       if (this.otpSmsService.isConfigured()) {
         // Production: Send via Nimbus IT SMS API
+        console.log(`[AUTH-SERVICE] OTP service IS configured. Attempting to send SMS...`);
         await this.otpSmsService.sendOtp(phone, otp);
-        this.logger.log(`OTP sent to ${phone} via Nimbus IT SMS`);
+        console.log(`[AUTH-SERVICE] OTP sent successfully via Nimbus IT SMS`);
+        this.logger.log(`[AUTH-SERVICE] OTP sent to ${phone} via Nimbus IT SMS`);
       } else {
         // Development: Log OTP without sending
+        console.log(`[AUTH-SERVICE] OTP service NOT configured. Using dev mode...`);
         this.otpSmsService.logOtpForDevelopment(phone, otp);
-        this.logger.warn('OTP service not configured. OTP logged for development only.');
+        this.logger.warn('[AUTH-SERVICE] OTP service not configured. OTP logged for development only.');
       }
     } catch (error) {
-      this.logger.error(`Failed to send OTP: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`[AUTH-SERVICE] Error during SMS send:`, error);
+      this.logger.error(`[AUTH-SERVICE] Failed to send OTP: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Don't throw - OTP is already stored in Redis, user can still verify it
       // In production, you might want to throw and fail the request
     }

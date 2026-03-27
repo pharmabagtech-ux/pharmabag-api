@@ -60,6 +60,8 @@ export class OtpSmsService {
    */
   async sendOtp(phoneNumber: string, otp: string): Promise<NimbusOtpResponseDto> {
     try {
+      console.log(`[OTP-SMS] Starting OTP send for ${phoneNumber}`);
+      
       // Validate input
       if (!phoneNumber || !otp) {
         throw new HttpException(
@@ -97,25 +99,30 @@ export class OtpSmsService {
         },
       };
 
+      console.log(`[OTP-SMS] Payload prepared. Config: User=${this.nimbusUser}, URL=${this.nimbusApiUrl}`);
       this.logger.debug(
-        `Sending OTP to ${cleanPhone} via Nimbus IT API`,
+        `[OTP-SMS] Sending OTP to ${cleanPhone} via Nimbus IT API`,
       );
 
       // Make HTTP POST request to Nimbus IT API
+      console.log(`[OTP-SMS] Making HTTP request to Nimbus IT API...`);
       const responseData = await this.makeHttpRequest(payload);
 
       // Log success
+      console.log(`[OTP-SMS] SMS sent successfully. Response:`, responseData);
       this.logger.log(
-        `OTP sent successfully to ${cleanPhone}. Response: ${JSON.stringify(responseData)}`,
+        `[OTP-SMS] OTP sent successfully to ${cleanPhone}. Response: ${JSON.stringify(responseData)}`,
       );
 
       return responseData;
     } catch (error) {
       if (error instanceof HttpException) {
+        console.error(`[OTP-SMS] HTTP Exception:`, error.message);
         throw error;
       }
 
-      this.logger.error(`Error sending OTP: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`[OTP-SMS] Error sending OTP:`, error instanceof Error ? error.message : error);
+      this.logger.error(`[OTP-SMS] Error sending OTP: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw new HttpException(
         'Failed to send OTP. Please try again later.',
         HttpStatus.SERVICE_UNAVAILABLE,
@@ -161,84 +168,101 @@ export class OtpSmsService {
    */
   private makeHttpRequest(payload: NimbusOtpRequestDto): Promise<NimbusOtpResponseDto> {
     return new Promise((resolve, reject) => {
-      const url = new URL(this.nimbusApiUrl);
-      const isHttps = url.protocol === 'https:';
-      const httpModule = isHttps ? https : http;
+      try {
+        const url = new URL(this.nimbusApiUrl);
+        const isHttps = url.protocol === 'https:';
+        const httpModule = isHttps ? https : http;
 
-      const postData = JSON.stringify(payload);
+        const postData = JSON.stringify(payload);
 
-      const options = {
-        hostname: url.hostname,
-        port: url.port,
-        path: url.pathname + url.search,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(postData),
-        },
-      };
+        const options = {
+          hostname: url.hostname,
+          port: url.port,
+          path: url.pathname + url.search,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData),
+          },
+        };
 
-      const req = httpModule.request(options, (res) => {
-        let data = '';
+        console.log(`[OTP-SMS] HTTP Options:`, options);
+        console.log(`[OTP-SMS] Request hostname: ${options.hostname}, path: ${options.path}`);
 
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
+        const req = httpModule.request(options, (res) => {
+          let data = '';
+          console.log(`[OTP-SMS] Response received with status: ${res.statusCode}`);
 
-        res.on('end', () => {
-          try {
-            // Check HTTP status code
-            if (!res.statusCode || res.statusCode >= 400) {
-              this.logger.error(
-                `Nimbus IT API error: HTTP ${res.statusCode} - ${data}`,
-              );
-              return reject(
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+
+          res.on('end', () => {
+            try {
+              console.log(`[OTP-SMS] Response data:`, data);
+              
+              // Check HTTP status code
+              if (!res.statusCode || res.statusCode >= 400) {
+                console.error(`[OTP-SMS] API returned error status ${res.statusCode}`);
+                this.logger.error(
+                  `[OTP-SMS] Nimbus IT API error: HTTP ${res.statusCode} - ${data}`,
+                );
+                return reject(
+                  new HttpException(
+                    `Failed to send OTP: HTTP ${res.statusCode}`,
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                  ),
+                );
+              }
+
+              // Parse JSON response
+              const responseData = JSON.parse(data) as NimbusOtpResponseDto;
+              console.log(`[OTP-SMS] Successfully parsed response:`, responseData);
+              resolve(responseData);
+            } catch (parseError) {
+              console.error(`[OTP-SMS] Parse error:`, parseError);
+              this.logger.error(`[OTP-SMS] Failed to parse Nimbus IT response: ${data}`);
+              reject(
                 new HttpException(
-                  `Failed to send OTP: HTTP ${res.statusCode}`,
+                  'Invalid response from SMS provider',
                   HttpStatus.SERVICE_UNAVAILABLE,
                 ),
               );
             }
-
-            // Parse JSON response
-            const responseData = JSON.parse(data) as NimbusOtpResponseDto;
-            resolve(responseData);
-          } catch (parseError) {
-            this.logger.error(`Failed to parse Nimbus IT response: ${data}`);
-            reject(
-              new HttpException(
-                'Invalid response from SMS provider',
-                HttpStatus.SERVICE_UNAVAILABLE,
-              ),
-            );
-          }
+          });
         });
-      });
 
-      req.on('error', (error) => {
-        this.logger.error(`Nimbus IT API request error: ${error.message}`);
-        reject(
-          new HttpException(
-            'Failed to send OTP. Please try again later.',
-            HttpStatus.SERVICE_UNAVAILABLE,
-          ),
-        );
-      });
+        req.on('error', (error) => {
+          console.error(`[OTP-SMS] Request error:`, error.message);
+          this.logger.error(`[OTP-SMS] Nimbus IT API request error: ${error.message}`);
+          reject(
+            new HttpException(
+              'Failed to send OTP. Please try again later.',
+              HttpStatus.SERVICE_UNAVAILABLE,
+            ),
+          );
+        });
 
-      // Set request timeout
-      req.setTimeout(10000, () => {
-        req.destroy();
-        reject(
-          new HttpException(
-            'SMS provider request timeout',
-            HttpStatus.SERVICE_UNAVAILABLE,
-          ),
-        );
-      });
+        // Set request timeout
+        req.setTimeout(10000, () => {
+          console.error(`[OTP-SMS] Request timeout after 10 seconds`);
+          req.destroy();
+          reject(
+            new HttpException(
+              'SMS provider request timeout',
+              HttpStatus.SERVICE_UNAVAILABLE,
+            ),
+          );
+        });
 
-      // Write payload
-      req.write(postData);
-      req.end();
+        // Write payload
+        console.log(`[OTP-SMS] Writing payload to request...`);
+        req.write(postData);
+        req.end();
+      } catch (error) {
+        console.error(`[OTP-SMS] Error in makeHttpRequest:`, error);
+        reject(error);
+      }
     });
   }
 }
