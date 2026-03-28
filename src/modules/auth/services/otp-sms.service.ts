@@ -1,6 +1,6 @@
 import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { URL } from 'url';
+import { URL, URLSearchParams } from 'url';
 import * as http from 'http';
 import * as https from 'https';
 import {
@@ -79,8 +79,9 @@ export class OtpSmsService {
         );
       }
 
-      // Replace placeholder in message with actual OTP
-      const message = this.smsTemplateMessage.replace('{otp}', otp);
+      // Replace placeholder in message with actual OTP and encode for third-party API
+      const rawMessage = this.smsTemplateMessage.replace('{otp}', otp);
+      const message = encodeURIComponent(rawMessage);
 
       // Build request payload
       const payload: NimbusOtpRequestDto = {
@@ -169,16 +170,16 @@ export class OtpSmsService {
   private makeHttpRequest(payload: NimbusOtpRequestDto): Promise<NimbusOtpResponseDto> {
     return new Promise((resolve, reject) => {
       try {
-        const url = new URL(this.nimbusApiUrl);
-        const isHttps = url.protocol === 'https:';
+        const parsedUrl = new URL(this.nimbusApiUrl);
+        const isHttps = parsedUrl.protocol === 'https:';
         const httpModule = isHttps ? https : http;
 
         const postData = JSON.stringify(payload);
 
-        const options = {
-          hostname: url.hostname,
-          port: url.port,
-          path: url.pathname + url.search,
+        const options: any = {
+          hostname: parsedUrl.hostname,
+          port: parsedUrl.port ? parseInt(parsedUrl.port, 10) : (isHttps ? 443 : 80),
+          path: parsedUrl.pathname,
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -186,12 +187,11 @@ export class OtpSmsService {
           },
         };
 
-        console.log(`[OTP-SMS] HTTP Options:`, options);
-        console.log(`[OTP-SMS] Request hostname: ${options.hostname}, path: ${options.path}`);
+        console.log(`[OTP-SMS] Making POST request to:`, options.hostname + options.path);
 
         const req = httpModule.request(options, (res) => {
           let data = '';
-          console.log(`[OTP-SMS] Response received with status: ${res.statusCode}`);
+          console.log(`[OTP-SMS] Response status: ${res.statusCode}`);
 
           res.on('data', (chunk) => {
             data += chunk;
@@ -199,11 +199,8 @@ export class OtpSmsService {
 
           res.on('end', () => {
             try {
-              console.log(`[OTP-SMS] Response data:`, data);
-              
-              // Check HTTP status code
               if (!res.statusCode || res.statusCode >= 400) {
-                console.error(`[OTP-SMS] API returned error status ${res.statusCode}`);
+                console.error(`[OTP-SMS] API error HTTP ${res.statusCode}: ${data}`);
                 this.logger.error(
                   `[OTP-SMS] Nimbus IT API error: HTTP ${res.statusCode} - ${data}`,
                 );
@@ -215,13 +212,11 @@ export class OtpSmsService {
                 );
               }
 
-              // Parse JSON response
               const responseData = JSON.parse(data) as NimbusOtpResponseDto;
-              console.log(`[OTP-SMS] Successfully parsed response:`, responseData);
+              console.log(`[OTP-SMS] Success:`, responseData);
               resolve(responseData);
-            } catch (parseError) {
-              console.error(`[OTP-SMS] Parse error:`, parseError);
-              this.logger.error(`[OTP-SMS] Failed to parse Nimbus IT response: ${data}`);
+            } catch (err) {
+              console.error(`[OTP-SMS] Parse error:`, err);
               reject(
                 new HttpException(
                   'Invalid response from SMS provider',
@@ -234,7 +229,7 @@ export class OtpSmsService {
 
         req.on('error', (error) => {
           console.error(`[OTP-SMS] Request error:`, error.message);
-          this.logger.error(`[OTP-SMS] Nimbus IT API request error: ${error.message}`);
+          this.logger.error(`[OTP-SMS] Nimbus IT request error: ${error.message}`);
           reject(
             new HttpException(
               'Failed to send OTP. Please try again later.',
@@ -243,24 +238,21 @@ export class OtpSmsService {
           );
         });
 
-        // Set request timeout
         req.setTimeout(10000, () => {
-          console.error(`[OTP-SMS] Request timeout after 10 seconds`);
+          console.error(`[OTP-SMS] Request timeout`);
           req.destroy();
           reject(
             new HttpException(
-              'SMS provider request timeout',
+              'SMS provider timeout',
               HttpStatus.SERVICE_UNAVAILABLE,
             ),
           );
         });
 
-        // Write payload
-        console.log(`[OTP-SMS] Writing payload to request...`);
         req.write(postData);
         req.end();
       } catch (error) {
-        console.error(`[OTP-SMS] Error in makeHttpRequest:`, error);
+        console.error(`[OTP-SMS] Error:`, error);
         reject(error);
       }
     });

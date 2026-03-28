@@ -36,7 +36,7 @@ async function bootstrap() {
   const allowedOrigins = configService
     .get<string>(
       'CORS_ORIGINS',
-      'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:5173,https://pharmabag-web-admin.vercel.app,https://pharmabag-web-seller.vercel.app,https://pharmabag-web-buyer.vercel.app,https://buyer.pharmabag.com,https://seller.pharmabag.com,https://admin.pharmabag.com,https://pharmabag-api.onrender.com/api,https://pharmabag-api.onrender.com',
+      'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:5173,https://pharmabag-web-admin.vercel.app,https://pharmabag-web-seller.vercel.app,https://pharmabag-web-buyer.vercel.app,https://buyer.pharmabag.com,https://seller.pharmabag.com,https://admin.pharmabag.com,https://pharmabag-api.onrender.com/api,https://pharmabag-api.onrender.com,https://pharmabag.in,https://www.pharmabag.in,https://admin.pharmabag.in,https://seller.pharmabag.in',
     )
     .split(',')
     .map((o) => o.trim());
