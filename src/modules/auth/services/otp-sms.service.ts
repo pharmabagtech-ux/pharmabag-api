@@ -88,16 +88,20 @@ export class OtpSmsService {
       const encodedMsg = encodeURIComponent(rawMessage);
 
       // Build the URL manually to match the exactly format in your photo 
-      // This prevents double-encoding and uses the exact parameter names
+      // Note: We use 10 digits as default. If it fails, try adding '91' prefix here.
       const finalUrl = `${this.nimbusApiUrl}?UserID=${this.nimbusUser}&Password=${this.nimbusPassword}&SenderID=${this.sender}&Phno=${cleanPhone}&Msg=${encodedMsg}&EntityID=${this.entityId}&TemplateID=${this.templateId}`;
 
-      console.log(`[OTP-SMS] Prepared URL: ${this.nimbusApiUrl}`);
+      // DEBUG: Log the exact message and masked URL for manual testing
+      console.log(`[OTP-SMS] Final Message text: "${rawMessage}"`);
+      const maskedUrl = finalUrl.replace(`Password=${this.nimbusPassword}`, `Password=****`);
+      console.log(`[OTP-SMS] DEBUG URL (Masked): ${maskedUrl}`);
+
       this.logger.debug(
         `[OTP-SMS] Sending OTP to ${cleanPhone} via Nimbus IT API`,
       );
 
       // Make HTTP GET request to Nimbus IT API
-      console.log(`[OTP-SMS] DISPATCHING: Sending request to: ${this.nimbusApiUrl}`);
+      console.log(`[OTP-SMS] DISPATCHING: Sending request...`);
       const responseData = await this.makeHttpRequest(finalUrl);
 
       // Verify if the API returned a successful status
