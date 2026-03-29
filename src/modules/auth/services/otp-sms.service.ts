@@ -97,13 +97,18 @@ export class OtpSmsService {
       );
 
       // Make HTTP GET request to Nimbus IT API
-      console.log(`[OTP-SMS] Making GET request to Nimbus IT API...`);
+      console.log(`[OTP-SMS] DISPATCHING: Sending request to: ${this.nimbusApiUrl}`);
       const responseData = await this.makeHttpRequest(finalUrl);
 
+      // Verify if the API returned a successful status
+      if (!responseData || (responseData.status && responseData.status === 'error')) {
+        console.warn(`[OTP-SMS] API Warning: Request sent but Nimbus returned an error:`, responseData.message || 'Unknown error');
+      }
+
       // Log success
-      console.log(`[OTP-SMS] SMS sent successfully. Response:`, responseData);
+      console.log(`[OTP-SMS] CONFirmed: Request completed. Response:`, responseData);
       this.logger.log(
-        `[OTP-SMS] OTP sent successfully to ${cleanPhone}.`,
+        `[OTP-SMS] OTP successfully processed for ${cleanPhone}. Status: ${responseData.status || 'Success'}`,
       );
 
       return responseData;
@@ -226,12 +231,16 @@ export class OtpSmsService {
           });
         });
 
+        req.on('finish', () => {
+          console.log(`[OTP-SMS] Request finished writing to socket.`);
+        });
+
         req.on('error', (error) => {
-          console.error(`[OTP-SMS] Request error:`, error.message);
+          console.error(`[OTP-SMS] FAILED to send request:`, error.message);
           this.logger.error(`[OTP-SMS] Nimbus IT request error: ${error.message}`);
           reject(
             new HttpException(
-              'Failed to send OTP. Please try again later.',
+              'Failed to reach SMS provider. Network error.',
               HttpStatus.SERVICE_UNAVAILABLE,
             ),
           );
