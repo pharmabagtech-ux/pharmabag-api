@@ -38,7 +38,7 @@ export class StorageController {
 
   @Post('product-image')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.SELLER)
+  @Roles(Role.SELLER, Role.ADMIN)
   @UseInterceptors(FileInterceptor('file', multerOptions))
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Upload product image (seller)' })

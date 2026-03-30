@@ -6,6 +6,7 @@ const logger = new Logger('RedisConfig');
 export const createRedisClient = (
   urlOrHost: string = 'localhost',
   port: number = 6379,
+  password?: string,
 ): Redis => {
   const isUrl = urlOrHost.startsWith('redis://') || urlOrHost.startsWith('rediss://');
 
@@ -18,14 +19,16 @@ export const createRedisClient = (
       },
     })
     : new Redis({
-      host: urlOrHost,
-      port,
-      maxRetriesPerRequest: null, // Required for BullMQ
-      retryStrategy(times: number) {
-        const delay = Math.min(times * 50, 2000);
-        return delay;
-      },
-    });
+        host: urlOrHost,
+        port,
+        password,
+        tls: urlOrHost.includes('upstash.io') ? {} : undefined,
+        maxRetriesPerRequest: null, // Required for BullMQ
+        retryStrategy(times: number) {
+          const delay = Math.min(times * 50, 2000);
+          return delay;
+        },
+      });
 
   client.on('connect', () => {
     logger.log('Redis connection established');

@@ -14,7 +14,8 @@ import { createRedisClient, REDIS_CLIENT } from './redis.config';
         }
         const host = configService.get<string>('REDIS_HOST', 'localhost');
         const port = configService.get<number>('REDIS_PORT', 6379);
-        return createRedisClient(host, port);
+        const password = configService.get<string>('REDIS_PASSWORD');
+        return createRedisClient(host, port, password);
       },
       inject: [ConfigService],
     },
