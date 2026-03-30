@@ -4,12 +4,13 @@ import * as https from 'https';
 import { IdfyVerificationResponseDto } from './dto/idfy-pan.dto';
 import { IdfyGstVerificationResponseDto } from './dto/idfy-gst.dto';
 
-interface IdfyConfig {
-  accountId: string;
-  apiKey: string;
-  taskId: string;
-  groupId: string;
-  baseUrl: string;
+interface MastersIndiaConfig {
+  clientId: string;
+  clientSecret: string;
+  username: string;
+  password: string;
+  oauthUrl: string;
+  apiBaseUrl: string;
 }
 
 const MAX_RETRIES = 3;
@@ -18,36 +19,35 @@ const TIMEOUT_MS = 10_000;
 @Injectable()
 export class IdfyService {
   private readonly logger = new Logger(IdfyService.name);
-  private readonly config: IdfyConfig | null;
+  private readonly config: MastersIndiaConfig | null;
+  private accessToken: string | null = null;
+  private tokenExpiresAt: number = 0;
 
   constructor(private readonly configService: ConfigService) {
-    const accountId = this.configService.get<string>('IDFY_ACCOUNT_ID');
-    const apiKey = this.configService.get<string>('IDFY_API_KEY');
+    const clientId = this.configService.get<string>('MASTERS_INDIA_CLIENT_ID');
+    const clientSecret = this.configService.get<string>('MASTERS_INDIA_CLIENT_SECRET');
+    const username = this.configService.get<string>('MASTERS_INDIA_USERNAME');
+    const password = this.configService.get<string>('MASTERS_INDIA_PASSWORD');
 
-    if (accountId && apiKey) {
+    if (clientId && clientSecret && username && password) {
       this.config = {
-        accountId,
-        apiKey,
-        taskId: this.configService.get<string>(
-          'IDFY_TASK_ID',
-          '74f4c926-250c-43ca-9c53-453e87ceacd1',
-        ),
-        groupId: this.configService.get<string>(
-          'IDFY_GROUP_ID',
-          '8e16424a-58fc-4ba4-ab20-5bc8e7c3c41e',
-        ),
-        baseUrl: 'https://eve.idfy.com/v3/tasks/sync/verify_with_source',
+        clientId,
+        clientSecret,
+        username,
+        password,
+        oauthUrl: 'https://commonapi.mastersindia.co/oauth/access_token',
+        apiBaseUrl: 'https://commonapi.mastersindia.co/commonapis',
       };
-      this.logger.log('IDFY service initialized (credentials configured)');
+      this.logger.log('Masters India service initialized (credentials configured)');
     } else {
       this.config = null;
       this.logger.warn(
-        'IDFY service NOT configured — IDFY_ACCOUNT_ID / IDFY_API_KEY missing. Verification will be skipped.',
+        'Masters India service NOT configured — Missing credentials. Verification will be skipped.',
       );
     }
   }
 
-  /** Returns true when IDFY credentials are present */
+  /** Returns true when Masters India credentials are present */
   isConfigured(): boolean {
     return this.config !== null;
   }
@@ -58,81 +58,89 @@ export class IdfyService {
 
   async verifyPan(panNumber: string): Promise<IdfyVerificationResponseDto> {
     if (!this.config) {
-      return { status: false, message: 'IDFY service not configured' };
+      return { status: false, message: 'Verification service not configured' };
     }
 
-    const url = `${this.config.baseUrl}/ind_pan`;
-    const payload = {
-      task_id: this.config.taskId,
-      group_id: this.config.groupId,
-      data: { id_number: panNumber },
-    };
+    try {
+      // Step 1: Get/refresh access token
+      const accessToken = await this.getAccessToken();
+      if (!accessToken) {
+        return { status: false, message: 'Failed to obtain access token' };
+      }
 
-    const response = await this.requestWithRetry(url, payload);
-    return this.parsePanResponse(response, panNumber);
+      // Step 2: Call PAN search API
+      const url = `${this.config.apiBaseUrl}/searchpan?pan=${panNumber}`;
+      this.logger.log(`Calling PAN API: ${url}`);
+      const response = await this.makeGetRequest(url, accessToken);
+      this.logger.log(`PAN API Response: ${JSON.stringify(response)}`);
+      return this.parsePanResponse(response, panNumber);
+    } catch (err: any) {
+      this.logger.error(`PAN verification failed: ${err.message}`);
+      return { status: false, message: 'Pan Number is invalid' };
+    }
   }
 
   // ─────────────────────────────────────────────────
-  // GST VERIFICATION
+  // GST VERIFICATION (Not supported by Masters India)
   // ─────────────────────────────────────────────────
 
   async verifyGst(
     gstNumber: string,
   ): Promise<IdfyGstVerificationResponseDto> {
-    if (!this.config) {
-      return { status: false, message: 'IDFY service not configured' };
-    }
-
-    const url = `${this.config.baseUrl}/ind_gst_certificate`;
-    const payload = {
-      task_id: this.config.taskId,
-      group_id: this.config.groupId,
-      data: { gstin: gstNumber },
+    this.logger.warn('GST verification not supported by Masters India API');
+    return {
+      status: false,
+      message: 'GST verification not currently available',
+      gstNumber,
     };
-
-    const response = await this.requestWithRetry(url, payload);
-    return this.parseGstResponse(response, gstNumber);
   }
 
   // ─────────────────────────────────────────────────
-  // HTTP REQUEST WITH EXPONENTIAL-BACKOFF RETRIES
-  // 3 attempts: delays 1 s → 2 s → 4 s
+  // OAUTH: GET/REFRESH ACCESS TOKEN
   // ─────────────────────────────────────────────────
 
-  private async requestWithRetry(
-    url: string,
-    payload: Record<string, any>,
-  ): Promise<any> {
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      try {
-        return await this.makeHttpsRequest(url, payload);
-      } catch (err: any) {
-        lastError = err;
-        this.logger.warn(
-          `IDFY request failed (attempt ${attempt + 1}/${MAX_RETRIES}): ${err.message}`,
-        );
-
-        if (attempt < MAX_RETRIES - 1) {
-          const delayMs = 1000 * Math.pow(2, attempt); // 1 s, 2 s, 4 s
-          await this.delay(delayMs);
-        }
-      }
+  private async getAccessToken(): Promise<string | null> {
+    // Return cached token if still valid
+    if (this.accessToken && Date.now() < this.tokenExpiresAt) {
+      this.logger.log('Using cached access token');
+      return this.accessToken;
     }
 
-    // All retries exhausted — return null so callers produce a failure DTO
-    this.logger.error(
-      `IDFY request failed after ${MAX_RETRIES} attempts: ${lastError?.message}`,
-    );
-    return null;
+    try {
+      const payload = {
+        client_id: this.config!.clientId,
+        client_secret: this.config!.clientSecret,
+        grant_type: 'password',
+        username: this.config!.username,
+        password: this.config!.password,
+      };
+
+      this.logger.log('Requesting OAuth access token...');
+      const response = await this.makePostRequest(this.config!.oauthUrl, payload);
+      this.logger.log(`OAuth Response: ${JSON.stringify(response)}`);
+
+      if (response.access_token) {
+        this.accessToken = response.access_token;
+        // Expire token 5 minutes before actual expiry for safety
+        const expiresIn = (response.expires_in || 3600) - 300;
+        this.tokenExpiresAt = Date.now() + expiresIn * 1000;
+        this.logger.log('Access token obtained successfully');
+        return this.accessToken;
+      }
+
+      this.logger.error(`No access token in OAuth response: ${JSON.stringify(response)}`);
+      return null;
+    } catch (err: any) {
+      this.logger.error(`OAuth request failed: ${err.message}`);
+      return null;
+    }
   }
 
   // ─────────────────────────────────────────────────
-  // LOW-LEVEL HTTPS CALL  (Node built-in — no extra dep)
+  // HTTP REQUESTS (POST for OAuth, GET for API)
   // ─────────────────────────────────────────────────
 
-  private makeHttpsRequest(
+  private makePostRequest(
     url: string,
     payload: Record<string, any>,
   ): Promise<any> {
@@ -147,8 +155,6 @@ export class IdfyService {
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(body),
-          'account-id': this.config!.accountId,
-          'api-key': this.config!.apiKey,
         },
         timeout: TIMEOUT_MS,
       };
@@ -161,14 +167,14 @@ export class IdfyService {
 
           if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
             return reject(
-              new Error(`IDFY API HTTP ${res.statusCode}: ${raw.slice(0, 200)}`),
+              new Error(`Masters India API HTTP ${res.statusCode}: ${raw.slice(0, 200)}`),
             );
           }
 
           try {
             resolve(JSON.parse(raw));
           } catch {
-            reject(new Error(`Failed to parse IDFY response: ${raw.slice(0, 200)}`));
+            reject(new Error(`Failed to parse response: ${raw.slice(0, 200)}`));
           }
         });
       });
@@ -176,7 +182,7 @@ export class IdfyService {
       req.on('error', reject);
       req.on('timeout', () => {
         req.destroy();
-        reject(new Error(`IDFY API request timed out after ${TIMEOUT_MS}ms`));
+        reject(new Error(`Request timed out after ${TIMEOUT_MS}ms`));
       });
 
       req.write(body);
@@ -184,53 +190,138 @@ export class IdfyService {
     });
   }
 
+  private makeGetRequest(
+    url: string,
+    accessToken: string,
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(url);
+
+      const options: https.RequestOptions = {
+        hostname: parsedUrl.hostname,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+          'client_id': this.config!.clientId,
+        },
+        timeout: TIMEOUT_MS,
+      };
+
+      const req = https.request(options, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf-8');
+
+          if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+            return reject(
+              new Error(`Masters India API HTTP ${res.statusCode}: ${raw.slice(0, 200)}`),
+            );
+          }
+
+          try {
+            resolve(JSON.parse(raw));
+          } catch {
+            reject(new Error(`Failed to parse response: ${raw.slice(0, 200)}`));
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error(`Request timed out after ${TIMEOUT_MS}ms`));
+      });
+
+      req.end();
+    });
+  }
+
   // ─────────────────────────────────────────────────
-  // RESPONSE PARSERS  (legacy-compatible format)
+  // RESPONSE PARSERS
   // ─────────────────────────────────────────────────
 
   private parsePanResponse(
     response: any,
     panNumber: string,
   ): IdfyVerificationResponseDto {
-    if (!response || response.status !== 'completed') {
-      return { status: false, message: 'Pan Number is invalid' };
+    this.logger.log(`Parsing PAN response: ${JSON.stringify(response)}`);
+    console.log(`[IDFY] Parsing PAN response:`, response);
+
+    if (!response) {
+      this.logger.warn('Empty response from PAN API');
+      return {
+        status: false,
+        message: 'Pan Number is invalid',
+      } as IdfyVerificationResponseDto;
     }
 
-    const src = response.result?.source_output;
-    const legalName =
-      src?.name_on_card ?? src?.legal_name ?? src?.name ?? '';
+    // Check if API returned error flag
+    if (response.error === true) {
+      this.logger.warn(`API returned error: ${response.message || 'Unknown error'}`);
+      return {
+        status: false,
+        message: 'Pan Number is invalid',
+      } as IdfyVerificationResponseDto;
+    }
+
+    // Masters India returns data as an array
+    let dataArray = response.data;
+    if (!Array.isArray(dataArray) || dataArray.length === 0) {
+      this.logger.warn(`Invalid data structure in response: ${JSON.stringify(response)}`);
+      return {
+        status: false,
+        message: 'Pan Number is invalid',
+      } as IdfyVerificationResponseDto;
+    }
+
+    // Get first record from array
+    const data = dataArray[0];
+
+    // Extract legal name from Masters India field names
+    // lgnm = legal name, tradeNam = trade name
+    const legalName = 
+      data.lgnm ?? 
+      data.name ?? 
+      data.legal_name ?? 
+      data.fullName ?? 
+      '';
+
+    if (!legalName) {
+      this.logger.warn(`No legal name found in response data: ${JSON.stringify(data)}`);
+      return {
+        status: false,
+        message: 'Pan Number is invalid',
+      } as IdfyVerificationResponseDto;
+    }
+
+    // Get GST number if available (may be empty for PAN not linked to GST)
+    // If no GST linked, we still return the PAN as verified
+    const gstNumber = data.gstin || null;
+
+    this.logger.log(
+      `PAN verified successfully: ${legalName}${gstNumber ? ` | GST: ${gstNumber}` : ' | No GST linked'}`,
+    );
 
     return {
       status: true,
       legalName,
-      gstNumber: panNumber, // legacy stores PAN in gst_number field
-      message: 'Pan Number is valid',
-    };
+      gstNumber: gstNumber || undefined, // Return GST only if it exists
+      message: gstNumber ? 'Pan Number is valid (GST linked)' : 'Pan Number is valid (No GST linked)',
+    } as IdfyVerificationResponseDto;
   }
 
   private parseGstResponse(
     response: any,
     gstNumber: string,
   ): IdfyGstVerificationResponseDto {
-    if (!response || response.status !== 'completed') {
-      return { status: false, message: 'GST Number is invalid' };
-    }
-
-    const src = response.result?.source_output;
-
+    // GST not supported
     return {
-      status: true,
-      legalName: src?.legal_name ?? '',
+      status: false,
+      message: 'GST verification not available',
       gstNumber,
-      natureOfBusinessActivity: src?.nature_of_business_activity ?? '',
-      address:
-        src?.principal_place_of_business_fields
-          ?.principal_place_of_business_address ?? '',
-      message: 'GST Number is valid',
-    };
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    } as IdfyGstVerificationResponseDto;
   }
 }

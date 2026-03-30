@@ -55,4 +55,10 @@ export class IdfyGstVerificationResponseDto {
 
   @ApiProperty({ example: 'GST Number is valid' })
   message: string;
+
+  constructor(partial?: Partial<IdfyGstVerificationResponseDto>) {
+    if (partial) {
+      Object.assign(this, partial);
+    }
+  }
 }

@@ -24,16 +24,23 @@ export class VerificationController {
   @ApiResponse({ status: 400, description: 'Validation error' })
   async verifyGstPan(
     @Body() dto: VerifyGstPanDto,
-  ): Promise<IdfyVerificationResponseDto | IdfyGstVerificationResponseDto> {
+  ): Promise<any> {
     if (!this.idfyService.isConfigured()) {
       throw new BadRequestException(
         'IDFY verification service is not configured',
       );
     }
 
+    console.log(`[Verification] Received request - Type: ${dto.type}, Value: ${dto.value}`);
+
+    let response;
     if (dto.type === VerificationType.PAN) {
-      return this.idfyService.verifyPan(dto.value);
+      response = await this.idfyService.verifyPan(dto.value);
+    } else {
+      response = await this.idfyService.verifyGst(dto.value);
     }
-    return this.idfyService.verifyGst(dto.value);
+
+    console.log(`[Verification] Response:`, JSON.stringify(response));
+    return response;
   }
 }

@@ -41,4 +41,10 @@ export class IdfyVerificationResponseDto {
 
   @ApiProperty({ example: 'Pan Number is valid' })
   message: string;
+
+  constructor(partial?: Partial<IdfyVerificationResponseDto>) {
+    if (partial) {
+      Object.assign(this, partial);
+    }
+  }
 }
