@@ -54,11 +54,36 @@ export class OrdersService {
     // 1b. Verify buyer profile is approved
     const buyerProfile = await this.prisma.buyerProfile.findUnique({
       where: { userId },
-      select: { verificationStatus: true, creditTier: true },
+      select: { verificationStatus: true, creditTier: true, legalName: true },
     });
-    if (!buyerProfile || buyerProfile.verificationStatus !== 'VERIFIED' || !buyerProfile.creditTier) {
+
+    if (!buyerProfile || !buyerProfile.legalName) {
       throw new ForbiddenException(
-        'Your profile is pending verification. Please wait for admin approval before placing orders.',
+        'Please complete your KYC onboarding before placing orders.',
+      );
+    }
+
+    if (buyerProfile.verificationStatus === 'UNVERIFIED') {
+      throw new ForbiddenException(
+        'Please complete your KYC onboarding before placing orders.',
+      );
+    }
+
+    if (buyerProfile.verificationStatus === 'PENDING') {
+      throw new ForbiddenException(
+        'Your profile is under review. Please wait for admin approval before placing orders.',
+      );
+    }
+
+    if (buyerProfile.verificationStatus === 'REJECTED') {
+      throw new ForbiddenException(
+        'Your profile verification was rejected. Please contact support.',
+      );
+    }
+
+    if (!buyerProfile.creditTier) {
+      throw new ForbiddenException(
+        'Your account is not yet fully approved. Please wait for admin to set your credit tier.',
       );
     }
 

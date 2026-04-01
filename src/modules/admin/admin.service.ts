@@ -213,6 +213,18 @@ export class AdminService {
       });
     }
 
+    // Also approve buyer profile — set VERIFIED + default PREPAID tier so buyer can place orders
+    const buyerProfile = await this.prisma.buyerProfile.findUnique({ where: { userId } });
+    if (buyerProfile) {
+      await this.prisma.buyerProfile.update({
+        where: { userId },
+        data: {
+          verificationStatus: 'VERIFIED',
+          creditTier: buyerProfile.creditTier ?? 'PREPAID', // preserve existing tier, or default to PREPAID
+        },
+      });
+    }
+
     this.logger.log(`User ${userId} approved by admin`);
     return updatedUser;
   }
@@ -242,6 +254,15 @@ export class AdminService {
       await this.prisma.sellerProfile.update({
         where: { userId },
         data: { verificationStatus: 'REJECTED' },
+      });
+    }
+
+    // Also reject buyer profile
+    const buyerProfile = await this.prisma.buyerProfile.findUnique({ where: { userId } });
+    if (buyerProfile) {
+      await this.prisma.buyerProfile.update({
+        where: { userId },
+        data: { verificationStatus: 'REJECTED', creditTier: null },
       });
     }
 
