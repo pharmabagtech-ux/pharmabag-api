@@ -53,6 +53,12 @@ export class StorageService {
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
   }
 
+  async uploadDrugLicense(file: Express.Multer.File): Promise<string> {
+    this.validateFile(file, this.ALLOWED_DOC_TYPES);
+    const key = await this.upload(file, 'drug-licenses');
+    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+  }
+
   async uploadPaymentProof(file: Express.Multer.File): Promise<string> {
     this.validateFile(file, this.ALLOWED_DOC_TYPES);
     const key = await this.upload(file, 'payment-proofs');

@@ -29,7 +29,12 @@ export class BuyersService {
       where: { userId },
     });
 
-    if (existing) {
+    // Auth auto-creates an empty BuyerProfile on registration.
+    // If that stub exists (legalName is empty), treat this as the real onboarding
+    // and update it instead of throwing a conflict.
+    const isEmptyStub = existing && !existing.legalName;
+
+    if (existing && !isEmptyStub) {
       throw new ConflictException('Buyer profile already exists');
     }
 
@@ -68,30 +73,36 @@ export class BuyersService {
     const state = addr?.state ?? dto.address?.['state'] ?? '';
     const pincode = addr?.pincode ?? dto.address?.['pincode'] ?? '';
 
-    const profile = await this.prisma.buyerProfile.create({
-      data: {
-        userId,
-        legalName: dto.legalName,
-        gstNumber: dto.gstNumber ?? null,
-        panNumber: dto.panNumber ?? null,
-        drugLicenseNumber: dto.drugLicenseNumber ?? null,
-        drugLicenseUrl: dto.drugLicenseUrl ?? null,
-        address: dto.address,
-        city: city || null,
-        state: state || null,
-        pincode: pincode || null,
-        latitude: dto.latitude,
-        longitude: dto.longitude,
-        gstPanResponse,
-        licence: dto.licence,
-        bankAccount: dto.bankAccount,
-        cancelCheck: dto.cancelCheck ?? null,
-        document: dto.document ?? null,
-        inviteCode: dto.inviteCode ?? null,
-        verificationStatus: 'PENDING', // Always pending — admin must verify
-        creditTier: null, // status 0 — no tier until admin approves
-      },
-    });
+    const profileData = {
+      legalName: dto.legalName,
+      gstNumber: dto.gstNumber ?? null,
+      panNumber: dto.panNumber ?? null,
+      drugLicenseNumber: dto.drugLicenseNumber ?? null,
+      drugLicenseUrl: dto.drugLicenseUrl ?? null,
+      address: dto.address,
+      city: city || null,
+      state: state || null,
+      pincode: pincode || null,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+      gstPanResponse,
+      licence: dto.licence,
+      bankAccount: dto.bankAccount,
+      cancelCheck: dto.cancelCheck ?? null,
+      document: dto.document ?? null,
+      inviteCode: dto.inviteCode ?? null,
+      verificationStatus: 'PENDING' as const, // Always pending — admin must verify
+      creditTier: null, // status 0 — no tier until admin approves
+    };
+
+    const profile = isEmptyStub
+      ? await this.prisma.buyerProfile.update({
+          where: { userId },
+          data: profileData,
+        })
+      : await this.prisma.buyerProfile.create({
+          data: { userId, ...profileData },
+        });
 
     // Update user status to PENDING
     await this.prisma.user.update({
@@ -254,10 +265,24 @@ export class BuyersService {
       if (addr.pincode) updateData.pincode = addr.pincode;
     }
 
+    // If the profile was UNVERIFIED (empty stub from registration) and the buyer
+    // is now submitting KYC fields, transition to PENDING so admin sees it.
+    if (existing.verificationStatus === 'UNVERIFIED' && (dto.legalName || dto.gstNumber || dto.panNumber)) {
+      updateData.verificationStatus = 'PENDING';
+    }
+
     const profile = await this.prisma.buyerProfile.update({
       where: { userId },
       data: updateData,
     });
+
+    // If we just moved to PENDING, also update User.status so admin sees it in pending queue
+    if (updateData.verificationStatus === 'PENDING') {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { status: 'PENDING' },
+      });
+    }
 
     this.logger.log(`Buyer profile updated for user ${userId}`);
     return profile;

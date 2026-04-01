@@ -50,6 +50,20 @@ export class StorageController {
     return { message: 'Product image uploaded', data: { url } };
   }
 
+  @Post('drug-license')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SELLER, Role.ADMIN)
+  @UseInterceptors(FileInterceptor('file', multerOptions))
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Upload drug license image (seller onboarding)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody(fileUploadBody)
+  @ApiResponse({ status: 201, description: 'Drug license uploaded, URL returned' })
+  async uploadDrugLicense(@UploadedFile() file: Express.Multer.File) {
+    const url = await this.storageService.uploadDrugLicense(file);
+    return { message: 'Drug license uploaded', data: { url } };
+  }
+
   @Post('payment-proof')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.BUYER)
