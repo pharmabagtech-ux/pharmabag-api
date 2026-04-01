@@ -321,9 +321,29 @@ export class IdfyService {
       data = response.data;
     }
 
-    const legalName = data.lgnm ?? data.name ?? data.legal_name ?? 'N/A';
-    const businessActivity = data.nature_of_business_activity ?? 'N/A';
-    const address = data.principal_place_of_business_address ?? data.address ?? 'N/A';
+    const legalName = data.tradeNam ?? data.lgnm ?? data.name ?? data.legal_name ?? 'N/A';
+    
+    // Masters India uses either 'nature_of_business_activity' or 'nba' (array)
+    let businessActivity = 'N/A';
+    if (data.nature_of_business_activity) {
+      businessActivity = data.nature_of_business_activity;
+    } else if (Array.isArray(data.nba) && data.nba.length > 0) {
+      businessActivity = data.nba.join(', ');
+    }
+
+    // Masters India uses either 'principal_place_of_business_address', 'address', or 'pradr.addr'
+    let address = 'N/A';
+    if (data.principal_place_of_business_address) {
+      address = data.principal_place_of_business_address;
+    } else if (data.address) {
+      address = data.address;
+    } else if (data.pradr && data.pradr.addr) {
+      const addrObj = data.pradr.addr;
+      // Build a string from the nested address fields (bnm, st, loc, city, dst, stcd, pncd)
+      const parts = [addrObj.bno, addrObj.bnm, addrObj.flno, addrObj.st, addrObj.loc, addrObj.city, addrObj.dst, addrObj.stcd, addrObj.pncd]
+        .filter(p => p && p.trim() !== '');
+      address = parts.join(', ');
+    }
 
     return {
       status: true,
