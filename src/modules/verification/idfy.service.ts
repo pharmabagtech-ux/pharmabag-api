@@ -296,7 +296,7 @@ export class IdfyService {
     response: any,
     gstNumber: string,
   ): IdfyGstVerificationResponseDto {
-    if (!response || response.error === true || !Array.isArray(response.data) || response.data.length === 0) {
+    if (!response || response.error === true || !response.data) {
       return {
         status: false,
         message: 'GST Number is invalid',
@@ -305,7 +305,22 @@ export class IdfyService {
       };
     }
 
-    const data = response.data[0];
+    // Handle both array and object responses from Masters India API
+    let data;
+    if (Array.isArray(response.data)) {
+      if (response.data.length === 0) {
+        return {
+          status: false,
+          message: 'GST Number is invalid',
+          gstNumber,
+          verifiedDocumentType: null
+        };
+      }
+      data = response.data[0];
+    } else {
+      data = response.data;
+    }
+
     const legalName = data.lgnm ?? data.name ?? data.legal_name ?? 'N/A';
     const businessActivity = data.nature_of_business_activity ?? 'N/A';
     const address = data.principal_place_of_business_address ?? data.address ?? 'N/A';
