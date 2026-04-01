@@ -168,9 +168,14 @@ export class AuthService {
       });
 
       this.logger.log(`New user registered: ${phone} (${user.id})`);
+    }
 
-      // Auto-create SellerProfile for SELLER users
-      if (user.role === Role.SELLER) {
+    // Lazy ensure profiles exist even for existing users (migrated/promoted)
+    if (user.role === Role.SELLER) {
+      const profile = await this.prisma.sellerProfile.findUnique({
+        where: { userId: user.id },
+      });
+      if (!profile) {
         await this.prisma.sellerProfile.create({
           data: {
             userId: user.id,
@@ -187,11 +192,13 @@ export class AuthService {
             rating: 0,
           },
         });
-        this.logger.log(`Auto-created SellerProfile for user ${user.id}`);
+        this.logger.log(`Lazily created SellerProfile for existing user ${user.id}`);
       }
-
-      // Auto-create BuyerProfile for BUYER users
-      if (user.role === Role.BUYER) {
+    } else if (user.role === Role.BUYER) {
+      const profile = await this.prisma.buyerProfile.findUnique({
+        where: { userId: user.id },
+      });
+      if (!profile) {
         await this.prisma.buyerProfile.create({
           data: {
             userId: user.id,
@@ -206,7 +213,7 @@ export class AuthService {
             pincode: '',
           },
         });
-        this.logger.log(`Auto-created BuyerProfile for user ${user.id}`);
+        this.logger.log(`Lazily created BuyerProfile for existing user ${user.id}`);
       }
     }
 

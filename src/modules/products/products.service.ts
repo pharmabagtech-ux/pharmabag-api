@@ -293,8 +293,18 @@ export class ProductsService {
     const seller = await this.prisma.sellerProfile.findUnique({
       where: { userId },
     });
+    
     if (!seller) {
-      throw new ForbiddenException('Seller profile not found');
+      this.logger.warn(`Seller profile not found for user ${userId} during findOwn`);
+      return {
+        products: [],
+        meta: {
+          total: 0,
+          page: query.page || 1,
+          limit: query.limit || 20,
+          totalPages: 0,
+        },
+      };
     }
 
     const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc' } = query;
