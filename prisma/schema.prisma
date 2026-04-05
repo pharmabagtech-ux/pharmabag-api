@@ -632,6 +632,7 @@ enum VerificationStatus {
 enum OrderStatus {
   PLACED
   ACCEPTED
+  PAYMENT_RECEIVED
   SHIPPED
   OUT_FOR_DELIVERY
   DELIVERED
