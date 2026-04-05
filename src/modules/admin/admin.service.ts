@@ -1309,6 +1309,56 @@ export class AdminService {
     return suggestion;
   }
 
+  async createSuggestion(dto: import('./dto/update-suggestion.dto').UpdateSuggestionDto) {
+    const slug = slugify(`${dto.name}-${dto.manufacturer}`, { lower: true, strict: true });
+    
+    return this.prisma.masterProduct.create({
+      data: {
+        name: dto.name || '',
+        manufacturer: dto.manufacturer || '',
+        chemicalComposition: dto.chemicalComposition || '',
+        description: dto.description || '',
+        mrp: dto.mrp,
+        gstPercent: dto.gstPercent,
+        categoryId: dto.categoryId || '',
+        subCategoryId: dto.subCategoryId || '',
+        slug,
+        isActive: dto.isActive ?? true,
+      },
+      include: {
+        category: { select: { id: true, name: true } },
+        subCategory: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  async updateSuggestion(id: string, dto: import('./dto/update-suggestion.dto').UpdateSuggestionDto) {
+    const suggestion = await this.prisma.masterProduct.findUnique({ where: { id } });
+    if (!suggestion) throw new NotFoundException('Suggestion not found');
+
+    const updated = await this.prisma.masterProduct.update({
+      where: { id },
+      data: {
+        ...(dto.name && { name: dto.name }),
+        ...(dto.manufacturer && { manufacturer: dto.manufacturer }),
+        ...(dto.chemicalComposition && { chemicalComposition: dto.chemicalComposition }),
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.mrp !== undefined && { mrp: dto.mrp }),
+        ...(dto.gstPercent !== undefined && { gstPercent: dto.gstPercent }),
+        ...(dto.categoryId && { categoryId: dto.categoryId }),
+        ...(dto.subCategoryId && { subCategoryId: dto.subCategoryId }),
+        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+      },
+      include: {
+        category: { select: { id: true, name: true } },
+        subCategory: { select: { id: true, name: true } },
+      },
+    });
+
+    return updated;
+  }
+
+
   async deleteSuggestion(id: string) {
     const suggestion = await this.prisma.masterProduct.findUnique({ where: { id } });
     if (!suggestion) throw new NotFoundException('Suggestion not found');

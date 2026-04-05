@@ -34,6 +34,7 @@ import { UpdateGstPanStatusDto } from './dto/update-gst-pan-status.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadedFile, UseInterceptors } from '@nestjs/common';
 import { AdminQuerySuggestionsDto } from './dto/query-suggestions.dto';
+import { UpdateSuggestionDto } from './dto/update-suggestion.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
@@ -507,6 +508,15 @@ export class AdminController {
     return { message: 'Suggestions retrieved', ...data };
   }
 
+  @Post('suggestions')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a new master product' })
+  @ApiResponse({ status: 201, description: 'Suggestion created' })
+  async createSuggestion(@Body() dto: UpdateSuggestionDto) {
+    const data = await this.adminService.createSuggestion(dto);
+    return { message: 'Suggestion created successfully', data };
+  }
+
   @Post('suggestions/import')
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(FileInterceptor('file'))
@@ -526,6 +536,19 @@ export class AdminController {
   async getSuggestionById(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.adminService.getSuggestionById(id);
     return { message: 'Suggestion retrieved', data };
+  }
+
+  @Patch('suggestions/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update a suggestion' })
+  @ApiResponse({ status: 200, description: 'Suggestion updated' })
+  @ApiResponse({ status: 404, description: 'Suggestion not found' })
+  async updateSuggestion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSuggestionDto,
+  ) {
+    const data = await this.adminService.updateSuggestion(id, dto);
+    return { message: 'Suggestion updated successfully', data };
   }
 
   @Delete('suggestions/:id')
