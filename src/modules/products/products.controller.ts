@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -50,12 +51,13 @@ export class ProductsController {
     return { message: 'Categories retrieved successfully', data };
   }
 
+  @Throttle({ default: { limit: 100, ttl: 60000 } })
   @Get('suggestions')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get product name suggestions for autocomplete (master vs local)' })
   @ApiResponse({ status: 200, description: 'Suggestions returned' })
   async getSuggestions(
-    @Query('q') q: string,
+    @Query('search') q: string, // Changed from 'q' to 'search' to match your logs
     @Query('type') type: 'product' | 'master' = 'product',
   ) {
     const data = await this.productsService.getSuggestions(q, type);
