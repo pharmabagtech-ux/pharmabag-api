@@ -41,6 +41,17 @@ export class TicketsController {
     return this.ticketsService.getTickets(userId, role);
   }
 
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a ticket by ID with all its messages' })
+  @ApiResponse({ status: 200, description: 'Ticket found' })
+  getTicketById(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: any,
+    @Param('id', ParseUUIDPipe) ticketId: string,
+  ) {
+    return this.ticketsService.getTicketById(userId, role, ticketId);
+  }
+
   @Post(':id/messages')
   @ApiOperation({ summary: 'Add a message to a ticket' })
   @ApiResponse({ status: 201, description: 'Message added' })

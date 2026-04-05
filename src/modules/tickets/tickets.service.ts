@@ -85,7 +85,10 @@ export class TicketsService {
       },
     });
 
-    return tickets;
+    return tickets.map(ticket => ({
+      ...ticket,
+      description: ticket.messages[0]?.message || '',
+    }));
   }
 
   /**
@@ -146,5 +149,57 @@ export class TicketsService {
 
     this.logger.log(`Message added to ticket ${ticketId} by user ${userId}`);
     return message;
+  }
+
+  /**
+   * Get a ticket by ID.
+   * - Ticket owner can always see their own ticket.
+   * - Admin can see any ticket.
+   */
+  async getTicketById(userId: string, role: Role, ticketId: string) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: {
+        id: true,
+        subject: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        userId: true,
+        user: {
+          select: {
+            id: true,
+            phone: true,
+            role: true,
+          },
+        },
+        messages: {
+          select: {
+            id: true,
+            senderId: true,
+            message: true,
+            createdAt: true,
+            sender: {
+              select: { id: true, role: true },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    if (!ticket) {
+      throw new NotFoundException('Ticket not found');
+    }
+
+    if (ticket.userId !== userId && role !== Role.ADMIN) {
+      throw new ForbiddenException('You do not have access to this ticket');
+    }
+
+    // Map first message to description for frontend compatibility if needed
+    return {
+      ...ticket,
+      description: ticket.messages[0]?.message || '',
+    };
   }
 }
