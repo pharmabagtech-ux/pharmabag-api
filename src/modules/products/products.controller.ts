@@ -52,10 +52,13 @@ export class ProductsController {
 
   @Get('suggestions')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Get product name suggestions for autocomplete' })
+  @ApiOperation({ summary: 'Get product name suggestions for autocomplete (master vs local)' })
   @ApiResponse({ status: 200, description: 'Suggestions returned' })
-  async getSuggestions(@Query('q') q: string) {
-    const data = await this.productsService.getSuggestions(q);
+  async getSuggestions(
+    @Query('q') q: string,
+    @Query('type') type: 'product' | 'master' = 'product',
+  ) {
+    const data = await this.productsService.getSuggestions(q, type);
     return { message: 'Suggestions retrieved successfully', data };
   }
 

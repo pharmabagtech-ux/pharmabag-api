@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -30,6 +31,9 @@ import { AdminUpdateTicketStatusDto } from './dto/admin-update-ticket-status.dto
 import { AdminReplyTicketDto } from './dto/admin-reply-ticket.dto';
 import { MarkPaidDto } from '../settlements/dto/mark-paid.dto';
 import { UpdateGstPanStatusDto } from './dto/update-gst-pan-status.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { UploadedFile, UseInterceptors } from '@nestjs/common';
+import { AdminQuerySuggestionsDto } from './dto/query-suggestions.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
@@ -488,6 +492,50 @@ export class AdminController {
   ) {
     const data = await this.adminService.updateSellerGstPanStatus(sellerId, dto);
     return { message: 'Seller GST/PAN status updated', data };
+  }
+
+  // ═══════════════════════════════════════════════════
+  // SUGGESTIONS (MASTER PRODUCTS)
+  // ═══════════════════════════════════════════════════
+
+  @Get('suggestions')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'List all master products (suggestions)' })
+  @ApiResponse({ status: 200, description: 'Suggestions list returned' })
+  async getSuggestions(@Query() query: AdminQuerySuggestionsDto) {
+    const data = await this.adminService.getSuggestions(query);
+    return { message: 'Suggestions retrieved', ...data };
+  }
+
+  @Post('suggestions/import')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Import suggestions from CSV' })
+  @ApiResponse({ status: 201, description: 'Import successful' })
+  async importSuggestions(@UploadedFile() file: any) {
+    if (!file) throw new BadRequestException('No CSV file uploaded');
+    const data = await this.adminService.importSuggestions(file.buffer);
+    return { message: 'Import completed successfully', ...data };
+  }
+
+  @Get('suggestions/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get suggestion details' })
+  @ApiResponse({ status: 200, description: 'Suggestion details returned' })
+  @ApiResponse({ status: 404, description: 'Suggestion not found' })
+  async getSuggestionById(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.adminService.getSuggestionById(id);
+    return { message: 'Suggestion retrieved', data };
+  }
+
+  @Delete('suggestions/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete a suggestion' })
+  @ApiResponse({ status: 200, description: 'Suggestion soft-deleted' })
+  @ApiResponse({ status: 404, description: 'Suggestion not found' })
+  async deleteSuggestion(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.adminService.deleteSuggestion(id);
+    return { message: 'Suggestion deleted successfully', data };
   }
 }
 

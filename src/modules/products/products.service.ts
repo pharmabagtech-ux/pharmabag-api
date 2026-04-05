@@ -524,34 +524,90 @@ export class ProductsService {
 
   /**
    * Get product name suggestions for autocomplete.
+   * Supports 'product' (default) for available listings and 'master' for catalog items.
    */
-  async getSuggestions(query: string) {
+  async getSuggestions(query: string, type: 'product' | 'master' = 'product') {
     if (!query || query.trim().length < 2) {
       return [];
     }
 
     const q = query.trim();
+    const words = q.split(/\s+/).filter((w) => w.length > 0);
+
+    const buildFilter = (words: string[]) => {
+      return {
+        AND: words.map((w) => ({
+          OR: [
+            { name: { contains: w, mode: 'insensitive' as Prisma.QueryMode } },
+            { manufacturer: { contains: w, mode: 'insensitive' as Prisma.QueryMode } },
+            { chemicalComposition: { contains: w, mode: 'insensitive' as Prisma.QueryMode } },
+          ],
+        })),
+      };
+    };
+
+    if (type === 'master') {
+      const suggestions = await this.prisma.masterProduct.findMany({
+        where: {
+          deletedAt: null,
+          isActive: true,
+          ...buildFilter(words),
+        },
+        select: {
+          id: true,
+          name: true,
+          manufacturer: true,
+          slug: true,
+          chemicalComposition: true,
+          mrp: true,
+          gstPercent: true,
+          categoryId: true,
+          subCategoryId: true,
+          images: { select: { url: true }, take: 1 },
+        },
+        take: 10,
+        orderBy: { name: 'asc' },
+      });
+
+      return suggestions.map((s) => ({
+        id: s.id,
+        productName: s.name,
+        companyName: s.manufacturer,
+        chemicalCombination: s.chemicalComposition,
+        slug: s.slug,
+        mrp: s.mrp,
+        gstPercent: s.gstPercent,
+        categoryId: s.categoryId,
+        subCategoryId: s.subCategoryId,
+        imageUrl: s.images?.[0]?.url || null,
+      }));
+    }
 
     const products = await this.prisma.product.findMany({
       where: {
+        isActive: true,
+        approvalStatus: ProductApprovalStatus.APPROVED,
         deletedAt: null,
-        OR: [
-          { name: { contains: q, mode: 'insensitive' } },
-          { manufacturer: { contains: q, mode: 'insensitive' } },
-          { chemicalComposition: { contains: q, mode: 'insensitive' } },
-        ],
+        ...buildFilter(words),
       },
       select: {
         id: true,
         name: true,
         manufacturer: true,
         slug: true,
+        mrp: true,
       },
       take: 10,
       orderBy: { name: 'asc' },
     });
 
-    return products;
+    return products.map((p) => ({
+      id: p.id,
+      productName: p.name,
+      companyName: p.manufacturer,
+      slug: p.slug,
+      mrp: p.mrp,
+    }));
   }
 
   /**

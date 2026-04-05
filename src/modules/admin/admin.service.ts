@@ -4,6 +4,10 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import csv from 'csv-parser';
+import { Readable } from 'stream';
+import slugify from 'slugify';
+import { AdminQuerySuggestionsDto } from './dto/query-suggestions.dto';
 import {
   UserStatus,
   OrderStatus,
@@ -1245,5 +1249,242 @@ export class AdminService {
         creditTier: dto.verified ? (dto.creditTier ?? null) : null,
       },
     });
+  }
+
+  // ═══════════════════════════════════════════════════
+  // SUGGESTIONS (MASTER PRODUCTS)
+  // ═══════════════════════════════════════════════════
+
+  async getSuggestions(query: AdminQuerySuggestionsDto) {
+    const { search, categoryId, subCategoryId, page = 1, limit = 20, isActive } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.MasterProductWhereInput = { deletedAt: null };
+    if (categoryId) where.categoryId = categoryId;
+    if (subCategoryId) where.subCategoryId = subCategoryId;
+    if (isActive === 'true') where.isActive = true;
+    if (isActive === 'false') where.isActive = false;
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { manufacturer: { contains: search, mode: 'insensitive' } },
+        { chemicalComposition: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.masterProduct.findMany({
+        where,
+        include: {
+          category: { select: { id: true, name: true } },
+          subCategory: { select: { id: true, name: true } },
+          images: { select: { id: true, url: true }, take: 1 },
+        },
+        orderBy: { name: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.masterProduct.count({ where }),
+    ]);
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  async getSuggestionById(id: string) {
+    const suggestion = await this.prisma.masterProduct.findUnique({
+      where: { id },
+      include: {
+        category: { select: { id: true, name: true } },
+        subCategory: { select: { id: true, name: true } },
+        images: { select: { id: true, url: true } },
+        products: {
+          select: { id: true, seller: { select: { companyName: true } }, mrp: true },
+          take: 10,
+        },
+      },
+    });
+
+    if (!suggestion) throw new NotFoundException('Suggestion not found');
+    return suggestion;
+  }
+
+  async deleteSuggestion(id: string) {
+    const suggestion = await this.prisma.masterProduct.findUnique({ where: { id } });
+    if (!suggestion) throw new NotFoundException('Suggestion not found');
+
+    return this.prisma.masterProduct.update({
+      where: { id },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+  }
+
+  async importSuggestions(buffer: Buffer): Promise<{ success: boolean; recordsProcessed: number; errors: string[] }> {
+    const records: any[] = [];
+    const errors: string[] = [];
+    let count = 0;
+
+    return new Promise((resolve, reject) => {
+      const stream = Readable.from(buffer);
+
+      stream
+        .pipe(csv())
+        .on('data', (data) => records.push(data))
+        .on('end', async () => {
+          this.logger.log(`Starting CSV import: ${records.length} records found`);
+
+          // Category/Subcategory Caches
+          const catCache = new Map<string, string>(); // name -> id
+          const subCatCache = new Map<string, string>(); // "catName:subName" -> id
+
+          for (const row of records) {
+            try {
+              const productName = row['PRODUCT NAME']?.trim();
+              if (!productName) continue;
+
+              const manufacturer = row['COMPANY NAME']?.trim() || 'UNKNOWN';
+              const chemicalComposition = row['CHEMICAL COMBINATION']?.trim() || 'N/A';
+              const categoryName = row['Category']?.trim();
+              const subCategoryName = row['Sub category']?.trim();
+              const gstStr = row['GST']?.trim() || '0';
+              const imageUrl = row['IMAGE URL']?.trim();
+
+              // Parse GST
+              const gstPercent = parseFloat(gstStr.replace('%', '')) || 0;
+
+              // 1. Resolve Category
+              let categoryId: string;
+              if (categoryName) {
+                if (catCache.has(categoryName)) {
+                  categoryId = catCache.get(categoryName) as string;
+                } else {
+                  let cat = await this.prisma.category.findUnique({ where: { name: categoryName } });
+                  if (!cat) {
+                    cat = await this.prisma.category.create({
+                      data: {
+                        name: categoryName,
+                        slug: slugify(categoryName, { lower: true, strict: true }),
+                      },
+                    });
+                  }
+                  categoryId = cat.id;
+                  catCache.set(categoryName, categoryId);
+                }
+              } else {
+                // Fallback category if none specified
+                categoryId = await this.resolveDefaultCategory(catCache);
+              }
+
+              // 2. Resolve Subcategory
+              let subCategoryId: string;
+              const subCatKey = `${categoryName}:${subCategoryName}`;
+              if (subCategoryName) {
+                if (subCatCache.has(subCatKey)) {
+                  subCategoryId = subCatCache.get(subCatKey) as string;
+                } else {
+                  let subCat = await this.prisma.subCategory.findFirst({
+                    where: { name: subCategoryName, categoryId },
+                  });
+                  if (!subCat) {
+                    subCat = await this.prisma.subCategory.create({
+                      data: {
+                        name: subCategoryName,
+                        slug: slugify(subCategoryName, { lower: true, strict: true }),
+                        categoryId,
+                      },
+                    });
+                  }
+                  subCategoryId = subCat.id;
+                  subCatCache.set(subCatKey, subCategoryId);
+                }
+              } else {
+                subCategoryId = await this.resolveDefaultSubCategory(categoryId, subCatCache);
+              }
+
+              // 3. Upsert MasterProduct
+              // Search by externalId if possible, or name+manufacturer
+              const slug = slugify(`${productName}-${manufacturer}`, { lower: true, strict: true });
+
+              const masterProduct = await this.prisma.masterProduct.upsert({
+                where: { externalId: (row.id as string) || slug },
+                update: {
+                  name: productName,
+                  manufacturer,
+                  chemicalComposition,
+                  gstPercent,
+                  categoryId,
+                  subCategoryId,
+                  updatedAt: new Date(),
+                },
+                create: {
+                  name: productName,
+                  slug,
+                  externalId: row.id || slug,
+                  manufacturer,
+                  chemicalComposition,
+                  gstPercent,
+                  categoryId,
+                  subCategoryId,
+                  isActive: true,
+                },
+              });
+
+              // 4. Handle Image
+              if (imageUrl) {
+                await this.prisma.masterProductImage.upsert({
+                  where: { id: `img-${masterProduct.id}` }, // pseudo-deterministic ID for images
+                  update: { url: imageUrl },
+                  create: {
+                    id: `img-${masterProduct.id}`,
+                    masterProductId: masterProduct.id,
+                    url: imageUrl,
+                  },
+                });
+              }
+
+              count++;
+            } catch (err) {
+              errors.push(`Row error: ${err.message}`);
+              this.logger.error(`CSV Row Error: ${err.message}`);
+            }
+          }
+
+          this.logger.log(`Import finished: ${count} records processed, ${errors.length} errors`);
+          resolve({ success: true, recordsProcessed: count, errors });
+        })
+        .on('error', (error) => {
+          this.logger.error(`CSV Stream Error: ${error.message}`);
+          reject(error);
+        });
+    });
+  }
+
+  private async resolveDefaultCategory(cache: Map<string, string>): Promise<string> {
+    const name = 'Uncategorized';
+    if (cache.has(name)) return (cache.get(name) as string);
+    let cat = await this.prisma.category.findUnique({ where: { name } });
+    if (!cat) {
+      cat = await this.prisma.category.create({
+        data: { name, slug: 'uncategorized' },
+      });
+    }
+    cache.set(name, cat.id);
+    return cat.id;
+  }
+
+  private async resolveDefaultSubCategory(categoryId: string, cache: Map<string, string>): Promise<string> {
+    const name = 'General';
+    const key = `DEFAULT:${categoryId}`;
+    if (cache.has(key)) return (cache.get(key) as string);
+    let subCat = await this.prisma.subCategory.findFirst({
+      where: { name, categoryId },
+    });
+    if (!subCat) {
+      subCat = await this.prisma.subCategory.create({
+        data: { name, slug: 'general', categoryId },
+      });
+    }
+    cache.set(key, subCat.id);
+    return subCat.id;
   }
 }
