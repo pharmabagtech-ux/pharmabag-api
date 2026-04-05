@@ -941,6 +941,16 @@ export class AdminService {
       data: notificationsData,
     });
 
+    // Save broadcast history
+    await this.prisma.notificationBroadcast.create({
+      data: {
+        adminId: adminUserId,
+        message,
+        target,
+        deliveredCount: users.length,
+      },
+    });
+
     // Simulate email/SMS triggers
     this.logger.log(`Broadcast Notification: Sent to ${users.length} users (Target: ${target}).`);
     users.forEach(u => {
@@ -955,6 +965,33 @@ export class AdminService {
       deliveredCount: users.length,
       target
     };
+  }
+
+  /**
+   * Get history of broadcasted notifications.
+   */
+  async getBroadcastHistory() {
+    return this.prisma.notificationBroadcast.findMany({
+      include: {
+        admin: {
+          select: {
+            id: true,
+            adminProfile: { select: { displayName: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Get history of broadcasted notifications sent by the current admin.
+   */
+  async getMyBroadcastHistory(adminId: string) {
+    return this.prisma.notificationBroadcast.findMany({
+      where: { adminId },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   // ════════════════════════════════════════════════════════

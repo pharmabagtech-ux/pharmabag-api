@@ -26,6 +26,7 @@ model User {
   reviews       Review[]
   sellerProfile SellerProfile?
   tickets       Ticket[]
+  notificationBroadcasts NotificationBroadcast[]
 
   @@index([role])
   @@index([status])
@@ -320,6 +321,19 @@ model Notification {
   @@index([isRead])
   @@index([createdAt])
   @@map("notifications")
+}
+
+model NotificationBroadcast {
+  id             String   @id @default(uuid())
+  adminId        String
+  message        String
+  target         String
+  deliveredCount Int
+  createdAt      DateTime @default(now())
+  admin          User     @relation(fields: [adminId], references: [id])
+
+  @@index([createdAt])
+  @@map("notification_broadcasts")
 }
 
 model Ticket {

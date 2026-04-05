@@ -384,6 +384,24 @@ export class AdminController {
     return { message: 'Broadcast initiated successfully', data };
   }
 
+  @Get('notifications/broadcasts')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get history of broadcasted notifications' })
+  @ApiResponse({ status: 200, description: 'Broadcast history returned' })
+  async getBroadcastHistory() {
+    const data = await this.adminService.getBroadcastHistory();
+    return { message: 'Broadcast history retrieved', data };
+  }
+
+  @Get('notifications/broadcasts/me')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get current admin\'s history of broadcasted notifications' })
+  @ApiResponse({ status: 200, description: 'Own broadcast history returned' })
+  async getMyBroadcastHistory(@CurrentUser('id') adminId: string) {
+    const data = await this.adminService.getMyBroadcastHistory(adminId);
+    return { message: 'Your broadcast history retrieved', data };
+  }
+
   // ═══════════════════════════════════════════════════
   // ADMIN MANAGEMENT (Role-Based Access Control)
   // ═══════════════════════════════════════════════════
