@@ -1537,4 +1537,30 @@ export class AdminService {
     cache.set(key, subCat.id);
     return subCat.id;
   }
+
+  async deleteUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        sellerProfile: true,
+        buyerProfile: true,
+      },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    return this.prisma.$transaction(async (tx) => {
+      // If seller, clean up settlements first as they don't have cascade delete
+      if (user.sellerProfile) {
+        await tx.sellerSettlement.deleteMany({
+          where: { sellerId: user.sellerProfile.id },
+        });
+      }
+
+      // Hard delete user, cascade will handle the rest (profiles, orders, etc.)
+      return tx.user.delete({
+        where: { id: userId },
+      });
+    });
+  }
 }

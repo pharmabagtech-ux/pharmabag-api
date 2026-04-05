@@ -98,6 +98,16 @@ export class AdminController {
     return { message: 'User approved successfully', data };
   }
 
+  @Delete('users/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Hard delete a user and all related data' })
+  @ApiResponse({ status: 200, description: 'User deleted' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async deleteUser(@Param('id', ParseUUIDPipe) id: string) {
+    await this.adminService.deleteUser(id);
+    return { message: 'User deleted successfully' };
+  }
+
   @Patch('users/:id/reject')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reject a user KYC' })
