@@ -267,7 +267,14 @@ export class BuyersService {
 
     // If the profile was UNVERIFIED (empty stub from registration) and the buyer
     // is now submitting KYC fields, transition to PENDING so admin sees it.
-    if (existing.verificationStatus === 'UNVERIFIED' && (dto.legalName || dto.gstNumber || dto.panNumber)) {
+    if (
+      existing.verificationStatus === 'UNVERIFIED' &&
+      (dto.legalName ||
+        dto.gstNumber ||
+        dto.panNumber ||
+        dto.drugLicenseNumber ||
+        dto.drugLicenseUrl)
+    ) {
       updateData.verificationStatus = 'PENDING';
     }
 

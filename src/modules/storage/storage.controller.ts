@@ -52,7 +52,7 @@ export class StorageController {
 
   @Post('drug-license')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.SELLER, Role.ADMIN)
+  @Roles(Role.SELLER, Role.BUYER, Role.ADMIN)
   @UseInterceptors(FileInterceptor('file', multerOptions))
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Upload drug license image (seller onboarding)' })
