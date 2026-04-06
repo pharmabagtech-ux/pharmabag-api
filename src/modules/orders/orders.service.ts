@@ -8,7 +8,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, Role } from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
@@ -248,6 +248,17 @@ export class OrdersService {
   // ──────────────────────────────────────────────
 
   async getOrderDetail(userId: string, orderId: string) {
+    // 1. Identify user roles and profiles
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, sellerProfile: { select: { id: true } } },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // 2. Fetch the order
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
@@ -283,10 +294,31 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    if (order.buyerId !== userId) {
+    // 3. Permission logic
+    let hasAccess = false;
+
+    // A. Role-based check
+    if (user.role === Role.ADMIN) {
+      hasAccess = true;
+    } else if (user.role === Role.BUYER && order.buyerId === userId) {
+      hasAccess = true;
+    } else if (user.role === Role.SELLER && user.sellerProfile) {
+      const sellerId = user.sellerProfile.id;
+      // Check if this seller has ANY item in the order
+      const hasSellerItem = order.items.some(
+        (item) => item.sellerId === sellerId,
+      );
+      if (hasSellerItem) {
+        hasAccess = true;
+      }
+    }
+
+    if (!hasAccess) {
       throw new NotFoundException('Order not found');
     }
 
+    // 4. (Optional) Filter items if user is a seller?
+    // In Phase 1, we show the full order but often it's better to show everything for tracking.
     return order;
   }
 

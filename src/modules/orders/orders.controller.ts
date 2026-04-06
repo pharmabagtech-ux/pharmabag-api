@@ -68,7 +68,7 @@ export class OrdersController {
   }
 
   @Get(':id')
-  @Roles(Role.BUYER)
+  @Roles(Role.BUYER, Role.SELLER, Role.ADMIN)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get full order detail' })
   @ApiResponse({ status: 200, description: 'Order details returned' })
