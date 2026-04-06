@@ -539,6 +539,11 @@ export class AdminService {
             },
           },
           address: true,
+          payments: {
+            select: { proofUrl: true },
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+          },
           _count: { select: { payments: true } },
         },
         orderBy: { createdAt: 'desc' },

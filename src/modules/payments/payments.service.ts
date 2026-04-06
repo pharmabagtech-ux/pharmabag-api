@@ -119,6 +119,52 @@ export class PaymentsService {
     return updated;
   }
 
+  async uploadProofByOrder(userId: string, orderId: string, dto: UploadProofDto) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true },
+    });
+
+    if (!order || order.buyerId !== userId) {
+      throw new NotFoundException('Order not found');
+    }
+
+    // Update existing pending payment or create new one
+    let payment = order.payments.find(
+      (p) => p.verificationStatus === PaymentVerificationStatus.PENDING,
+    );
+
+    if (payment) {
+      payment = await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { proofUrl: dto.proofUrl },
+      });
+    } else {
+      payment = await this.prisma.payment.create({
+        data: {
+          orderId,
+          amount: order.totalAmount,
+          method: 'BANK_TRANSFER',
+          proofUrl: dto.proofUrl,
+          verificationStatus: PaymentVerificationStatus.PENDING,
+        },
+      });
+    }
+
+    // Set order payment status to SUCCESS immediately (as requested by user)
+    // and also maybe update order status to PAYMENT_RECEIVED
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { 
+        paymentStatus: PaymentStatus.SUCCESS,
+        orderStatus: OrderStatus.PAYMENT_RECEIVED 
+      },
+    });
+
+    this.logger.log(`Proof uploaded and order ${orderId} marked as SUCCESS/PAYMENT_RECEIVED`);
+    return payment;
+  }
+
   // ──────────────────────────────────────────────
   // BUYER: Get all payments for an order
   // ──────────────────────────────────────────────

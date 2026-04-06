@@ -66,6 +66,21 @@ export class PaymentsController {
     return { message: 'Payment proof uploaded', data };
   }
 
+  @Post('order/:orderId/proof')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.BUYER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Upload payment proof by order ID' })
+  @ApiResponse({ status: 200, description: 'Proof uploaded' })
+  async uploadProofByOrder(
+    @CurrentUser('id') userId: string,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: UploadProofDto,
+  ) {
+    const data = await this.paymentsService.uploadProofByOrder(userId, orderId, dto);
+    return { message: 'Payment proof uploaded', data };
+  }
+
   // ──────────────────────────────────────────────
   // BUYER: Get all payments for an order
   // ──────────────────────────────────────────────
