@@ -444,10 +444,13 @@ export class OrdersService {
 
     // 4. Validate status transition
     const validTransitions: Record<string, string[]> = {
-      PLACED: ['ACCEPTED'],
-      ACCEPTED: ['SHIPPED'],
-      SHIPPED: ['OUT_FOR_DELIVERY'],
-      OUT_FOR_DELIVERY: ['DELIVERED'],
+      PLACED: ['ACCEPTED', 'CANCELLED'],
+      ACCEPTED: ['PAYMENT_RECEIVED', 'DISPATCHED_FROM_SELLER', 'CANCELLED'],
+      PAYMENT_RECEIVED: ['DISPATCHED_FROM_SELLER', 'SHIPPED', 'CANCELLED'],
+      DISPATCHED_FROM_SELLER: ['RECEIVED_AT_WAREHOUSE', 'SHIPPED', 'CANCELLED'],
+      RECEIVED_AT_WAREHOUSE: ['SHIPPED', 'CANCELLED'],
+      SHIPPED: ['OUT_FOR_DELIVERY', 'CANCELLED'],
+      OUT_FOR_DELIVERY: ['DELIVERED', 'CANCELLED'],
     };
 
     const allowed = validTransitions[order.orderStatus] ?? [];
