@@ -58,10 +58,10 @@ export class StorageController {
   @ApiOperation({ summary: 'Upload drug license image (seller onboarding)' })
   @ApiConsumes('multipart/form-data')
   @ApiBody(fileUploadBody)
-  @ApiResponse({ status: 201, description: 'Drug license uploaded, URL returned' })
+  @ApiResponse({ status: 201, description: 'Drug license uploaded, secure KEY returned' })
   async uploadDrugLicense(@UploadedFile() file: Express.Multer.File) {
-    const url = await this.storageService.uploadDrugLicense(file);
-    return { message: 'Drug license uploaded', data: { url } };
+    const key = await this.storageService.uploadDrugLicense(file);
+    return { message: 'Drug license uploaded securely', data: { key } };
   }
 
   @Post('payment-proof')
@@ -72,10 +72,10 @@ export class StorageController {
   @ApiOperation({ summary: 'Upload payment proof (buyer)' })
   @ApiConsumes('multipart/form-data')
   @ApiBody(fileUploadBody)
-  @ApiResponse({ status: 201, description: 'Proof uploaded, URL returned' })
+  @ApiResponse({ status: 201, description: 'Proof uploaded, secure KEY returned' })
   async uploadPaymentProof(@UploadedFile() file: Express.Multer.File) {
-    const url = await this.storageService.uploadPaymentProof(file);
-    return { message: 'Payment proof uploaded', data: { url } };
+    const key = await this.storageService.uploadPaymentProof(file);
+    return { message: 'Payment proof uploaded securely', data: { key } };
   }
 
   @Post('kyc')

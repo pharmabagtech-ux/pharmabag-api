@@ -56,14 +56,14 @@ export class StorageService {
 
   async uploadDrugLicense(file: Express.Multer.File): Promise<string> {
     this.validateFile(file, this.ALLOWED_DOC_TYPES);
-    const key = await this.upload(file, 'drug-licenses');
-    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+    // For sensitive docs, return the Key, which will be used with /storage/view to get a presigned URL
+    return this.upload(file, 'drug-licenses');
   }
 
   async uploadPaymentProof(file: Express.Multer.File): Promise<string> {
     this.validateFile(file, this.ALLOWED_DOC_TYPES);
-    const key = await this.upload(file, 'payment-proofs');
-    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+    // For sensitive docs, return the Key
+    return this.upload(file, 'payment-proofs');
   }
 
   async uploadKycDocument(file: Express.Multer.File): Promise<string> {
@@ -78,9 +78,18 @@ export class StorageService {
    * @param expiresIn Seconds until the link expires (default 1 hour)
    */
   async getPresignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+    // Robust key extraction: If the 'key' is accidentally a full S3 URL, extract the actual key part
+    let actualKey = key;
+    if (key.startsWith('http')) {
+      const parts = key.split('.amazonaws.com/');
+      if (parts.length > 1) {
+        actualKey = parts[1];
+      }
+    }
+
     const command = new GetObjectCommand({
       Bucket: this.bucket,
-      Key: key,
+      Key: actualKey,
     });
 
     return getSignedUrl(this.s3, command, { expiresIn });
