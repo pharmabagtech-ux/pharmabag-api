@@ -445,12 +445,14 @@ export class OrdersService {
     // 4. Validate status transition
     const validTransitions: Record<string, string[]> = {
       PLACED: ['ACCEPTED', 'CANCELLED'],
-      ACCEPTED: ['PAYMENT_RECEIVED', 'DISPATCHED_FROM_SELLER', 'CANCELLED'],
-      PAYMENT_RECEIVED: ['DISPATCHED_FROM_SELLER', 'SHIPPED', 'CANCELLED'],
+      ACCEPTED: ['PAYMENT_RECEIVED', 'READY_TO_SHIP', 'CANCELLED'],
+      PAYMENT_RECEIVED: ['READY_TO_SHIP', 'DISPATCHED_FROM_SELLER', 'CANCELLED'],
+      READY_TO_SHIP: ['DISPATCHED_FROM_SELLER', 'CANCELLED'],
       DISPATCHED_FROM_SELLER: ['RECEIVED_AT_WAREHOUSE', 'SHIPPED', 'CANCELLED'],
       RECEIVED_AT_WAREHOUSE: ['SHIPPED', 'CANCELLED'],
       SHIPPED: ['OUT_FOR_DELIVERY', 'CANCELLED'],
       OUT_FOR_DELIVERY: ['DELIVERED', 'CANCELLED'],
+      DELIVERED: ['RETURNED', 'CANCELLED'],
     };
 
     const allowed = validTransitions[order.orderStatus] ?? [];
@@ -522,7 +524,7 @@ export class OrdersService {
     }
 
     // 3. Status validation
-    const uncancelable: OrderStatus[] = [OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED];
+    const uncancelable: OrderStatus[] = [OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.RETURNED, OrderStatus.CANCELLED];
     if (uncancelable.includes(order.orderStatus)) {
       throw new BadRequestException(`Cannot cancel order in ${order.orderStatus} status`);
     }
