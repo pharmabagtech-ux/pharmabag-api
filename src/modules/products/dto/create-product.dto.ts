@@ -135,4 +135,12 @@ export class CreateProductDto {
   @IsBoolean()
   @IsOptional()
   isMigration?: boolean;
+
+  @ApiPropertyOptional({
+    example: 'uuid-of-master-product',
+    description: 'ID of the master product from catalog (if used, bypasses approval)',
+  })
+  @IsString()
+  @IsOptional()
+  masterProductId?: string;
 }

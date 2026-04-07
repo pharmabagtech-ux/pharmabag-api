@@ -58,6 +58,7 @@ export class ProductsService {
         ? dto.slug.trim().toLowerCase()
         : this.generateSlug(dto.name),
       externalId: dto.externalId ? dto.externalId.trim() : undefined,
+      masterProductId: dto.masterProductId ? dto.masterProductId.trim() : undefined,
     };
   }
 
@@ -107,10 +108,13 @@ export class ProductsService {
       }
     }
 
+    const isFromMaster = !!normalized.masterProductId;
+    
     const productData: Prisma.ProductCreateInput = {
       seller: { connect: { id: seller.id } },
       category: { connect: { id: normalized.categoryId } },
       subCategory: { connect: { id: normalized.subCategoryId } },
+      masterProduct: isFromMaster ? { connect: { id: normalized.masterProductId } } : undefined,
       name: normalized.name,
       slug: normalized.slug,
       externalId: normalized.externalId,
@@ -123,8 +127,8 @@ export class ProductsService {
       maximumOrderQuantity: normalized.maximumOrderQuantity,
       discountType: normalized.discountType,
       discountMeta: normalized.discountMeta ?? undefined,
-      approvalStatus: ProductApprovalStatus.PENDING,
-      isActive: false, // Products start inactive until admin approves
+      approvalStatus: isFromMaster ? ProductApprovalStatus.APPROVED : ProductApprovalStatus.PENDING,
+      isActive: isFromMaster ? true : false, // Auto-approve if from master catalog
     };
 
     const product = await this.prisma.product.create({
