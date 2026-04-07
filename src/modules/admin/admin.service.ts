@@ -1412,141 +1412,173 @@ export class AdminService {
   }
 
   async importSuggestions(buffer: Buffer): Promise<{ success: boolean; recordsProcessed: number; errors: string[] }> {
-    const records: any[] = [];
+    const rawRecords: any[] = [];
     const errors: string[] = [];
     let count = 0;
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const stream = Readable.from(buffer);
 
       stream
         .pipe(csv())
-        .on('data', (data) => records.push(data))
+        .on('data', (data) => rawRecords.push(data))
+        .on('error', (err) => {
+          this.logger.error(`CSV Parsing Error: ${err.message}`);
+          resolve({ success: false, recordsProcessed: 0, errors: [`Parsing error: ${err.message}`] });
+        })
         .on('end', async () => {
-          this.logger.log(`Starting CSV import: ${records.length} records found`);
+          try {
+            this.logger.log(`Starting CSV import: ${rawRecords.length} records found`);
 
-          // Category/Subcategory Caches
-          const catCache = new Map<string, string>(); // name -> id
-          const subCatCache = new Map<string, string>(); // "catName:subName" -> id
+            // 1. Filter out empty/invalid rows early
+            const records = rawRecords.filter(r => r['PRODUCT NAME']?.trim());
+            if (records.length === 0) {
+              return resolve({ success: true, recordsProcessed: 0, errors: ['No valid products found in CSV'] });
+            }
 
-          for (const row of records) {
-            try {
-              const productName = row['PRODUCT NAME']?.trim();
-              if (!productName) continue;
+            // 2. Pre-resolve all Categories
+            const uniqueCategoryNames = [...new Set(records.map(r => r['Category']?.trim()).filter(Boolean))] as string[];
+            const catCache = new Map<string, string>();
+            
+            // Load existing
+            const existingCats = await this.prisma.category.findMany({
+              where: { name: { in: uniqueCategoryNames } }
+            });
+            existingCats.forEach(c => catCache.set(c.name, c.id));
 
-              const manufacturer = row['COMPANY NAME']?.trim() || 'UNKNOWN';
-              const chemicalComposition = row['CHEMICAL COMBINATION']?.trim() || 'N/A';
-              const categoryName = row['Category']?.trim();
-              const subCategoryName = row['Sub category']?.trim();
-              const gstStr = row['GST']?.trim() || '0';
-              const imageUrl = row['IMAGE URL']?.trim();
-
-              // Parse GST
-              const gstPercent = parseFloat(gstStr.replace('%', '')) || 0;
-
-              // 1. Resolve Category
-              let categoryId: string;
-              if (categoryName) {
-                if (catCache.has(categoryName)) {
-                  categoryId = catCache.get(categoryName) as string;
-                } else {
-                  let cat = await this.prisma.category.findUnique({ where: { name: categoryName } });
-                  if (!cat) {
-                    cat = await this.prisma.category.create({
-                      data: {
-                        name: categoryName,
-                        slug: slugify(categoryName, { lower: true, strict: true }),
-                      },
-                    });
-                  }
-                  categoryId = cat.id;
-                  catCache.set(categoryName, categoryId);
-                }
-              } else {
-                // Fallback category if none specified
-                categoryId = await this.resolveDefaultCategory(catCache);
+            // Create missing
+            for (const name of uniqueCategoryNames) {
+              if (!catCache.has(name)) {
+                const cat = await this.prisma.category.create({
+                  data: { name, slug: slugify(name, { lower: true, strict: true }) || name.toLowerCase() }
+                });
+                catCache.set(name, cat.id);
               }
+            }
 
-              // 2. Resolve Subcategory
-              let subCategoryId: string;
-              const subCatKey = `${categoryName}:${subCategoryName}`;
-              if (subCategoryName) {
-                if (subCatCache.has(subCatKey)) {
-                  subCategoryId = subCatCache.get(subCatKey) as string;
-                } else {
-                  let subCat = await this.prisma.subCategory.findFirst({
-                    where: { name: subCategoryName, categoryId },
-                  });
-                  if (!subCat) {
-                    subCat = await this.prisma.subCategory.create({
-                      data: {
-                        name: subCategoryName,
-                        slug: slugify(subCategoryName, { lower: true, strict: true }),
-                        categoryId,
-                      },
-                    });
-                  }
-                  subCategoryId = subCat.id;
-                  subCatCache.set(subCatKey, subCategoryId);
-                }
-              } else {
-                subCategoryId = await this.resolveDefaultSubCategory(categoryId, subCatCache);
-              }
+            // Default category
+            const defaultCatId = await this.resolveDefaultCategory(catCache);
 
-              // 3. Upsert MasterProduct
-              // Search by externalId if possible, or name+manufacturer
-              const slug = slugify(`${productName}-${manufacturer}`, { lower: true, strict: true });
+            // 3. Pre-resolve all Subcategories
+            const subCatPairs = new Set<string>(); // "catName|subName"
+            records.forEach(r => {
+              const c = r['Category']?.trim() || 'Uncategorized';
+              const s = r['Sub category']?.trim();
+              if (s) subCatPairs.add(`${c}|${s}`);
+            });
 
-              const masterProduct = await this.prisma.masterProduct.upsert({
-                where: { externalId: (row.id as string) || slug },
-                update: {
-                  name: productName,
-                  manufacturer,
-                  chemicalComposition,
-                  gstPercent,
-                  categoryId,
-                  subCategoryId,
-                  updatedAt: new Date(),
-                },
-                create: {
-                  name: productName,
-                  slug,
-                  externalId: row.id || slug,
-                  manufacturer,
-                  chemicalComposition,
-                  gstPercent,
-                  categoryId,
-                  subCategoryId,
-                  isActive: true,
-                },
+            const subCatCache = new Map<string, string>(); // "catName|subName" -> id
+            
+            for (const pair of subCatPairs) {
+              const [catName, subName] = pair.split('|');
+              const categoryId = catCache.get(catName) || defaultCatId;
+              
+              let subCat = await this.prisma.subCategory.findFirst({
+                where: { name: subName, categoryId }
               });
-
-              // 4. Handle Image
-              if (imageUrl) {
-                await this.prisma.masterProductImage.upsert({
-                  where: { id: `img-${masterProduct.id}` }, // pseudo-deterministic ID for images
-                  update: { url: imageUrl },
-                  create: {
-                    id: `img-${masterProduct.id}`,
-                    masterProductId: masterProduct.id,
-                    url: imageUrl,
-                  },
+              
+              if (!subCat) {
+                subCat = await this.prisma.subCategory.create({
+                  data: { 
+                    name: subName, 
+                    slug: slugify(subName, { lower: true, strict: true }) || subName.toLowerCase(),
+                    categoryId 
+                  }
                 });
               }
-
-              count++;
-            } catch (err) {
-              errors.push(`Row error: ${err.message}`);
-              this.logger.error(`CSV Row Error: ${err.message}`);
+              subCatCache.set(pair, subCat.id);
             }
-          }
 
-          this.logger.log(`Import finished: ${count} records processed, ${errors.length} errors`);
-          resolve({ success: true, recordsProcessed: count, errors });
-        })
-        .on('error', (error) => {
-          this.logger.error(`CSV Stream Error: ${error.message}`);
-          reject(error);
+            // Default subcategory per category used
+            const defaultSubCatCache = new Map<string, string>(); // catId -> subId
+
+            // 4. Process Products in Chunks
+            const CHUNK_SIZE = 50;
+            for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+              const chunk = records.slice(i, i + CHUNK_SIZE);
+              
+              await Promise.all(chunk.map(async (row) => {
+                try {
+                  const productName = row['PRODUCT NAME']?.trim();
+                  const manufacturer = row['COMPANY NAME']?.trim() || 'UNKNOWN';
+                  const chemicalComposition = row['CHEMICAL COMBINATION']?.trim() || 'N/A';
+                  const categoryName = row['Category']?.trim();
+                  const subCategoryName = row['Sub category']?.trim();
+                  const gstStr = row['GST']?.trim() || '0';
+                  const imageUrl = row['IMAGE URL']?.trim();
+
+                  const gstPercent = parseFloat(gstStr.replace('%', '')) || 0;
+                  const categoryId = (categoryName && catCache.get(categoryName)) || defaultCatId;
+                  
+                  let subCategoryId: string;
+                  const subCatLookupKey = `${categoryName || 'Uncategorized'}|${subCategoryName}`;
+                  if (subCategoryName && subCatCache.has(subCatLookupKey)) {
+                    subCategoryId = subCatCache.get(subCatLookupKey)!;
+                  } else {
+                    const cachedDefault = defaultSubCatCache.get(categoryId);
+                    if (cachedDefault) {
+                      subCategoryId = cachedDefault;
+                    } else {
+                      subCategoryId = await this.resolveDefaultSubCategory(categoryId, defaultSubCatCache);
+                      defaultSubCatCache.set(categoryId, subCategoryId);
+                    }
+                  }
+
+                  const slug = slugify(`${productName}-${manufacturer}`, { lower: true, strict: true }) || `p-${Date.now()}-${Math.random()}`;
+
+                  const masterProduct = await this.prisma.masterProduct.upsert({
+                    where: { externalId: (row.id as string) || slug },
+                    update: {
+                      name: productName,
+                      manufacturer,
+                      chemicalComposition,
+                      gstPercent,
+                      categoryId,
+                      subCategoryId,
+                      updatedAt: new Date(),
+                    },
+                    create: {
+                      name: productName,
+                      slug,
+                      externalId: row.id || slug,
+                      manufacturer,
+                      chemicalComposition,
+                      gstPercent,
+                      categoryId,
+                      subCategoryId,
+                      isActive: true,
+                    },
+                  });
+
+                  if (imageUrl) {
+                    await this.prisma.masterProductImage.upsert({
+                      where: { id: `img-${masterProduct.id}` },
+                      update: { url: imageUrl },
+                      create: {
+                        id: `img-${masterProduct.id}`,
+                        masterProductId: masterProduct.id,
+                        url: imageUrl,
+                      },
+                    });
+                  }
+
+                  count++;
+                } catch (err) {
+                  errors.push(`Row error (${row['PRODUCT NAME']}): ${err.message}`);
+                }
+              }));
+              
+              if (i % 500 === 0) {
+                this.logger.log(`Import progress: ${i}/${records.length} processed`);
+              }
+            }
+
+            this.logger.log(`Import finished: ${count} records processed, ${errors.length} errors`);
+            resolve({ success: true, recordsProcessed: count, errors: errors.slice(0, 100) }); // Cap error log
+          } catch (err) {
+            this.logger.error(`Critical CSV Import Error: ${err.message}`);
+            resolve({ success: false, recordsProcessed: count, errors: [`Global error: ${err.message}`] });
+          }
         });
     });
   }
