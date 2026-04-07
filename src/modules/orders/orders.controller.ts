@@ -81,6 +81,20 @@ export class OrdersController {
     return { message: 'Order details retrieved successfully', data };
   }
 
+  @Patch(':id/cancel')
+  @Roles(Role.BUYER, Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel order & restore stock' })
+  @ApiResponse({ status: 200, description: 'Order cancelled' })
+  async cancelOrder(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
+    @Param('id', ParseUUIDPipe) orderId: string,
+  ) {
+    const data = await this.ordersService.cancelOrder(userId, orderId, role);
+    return { message: 'Order cancelled successfully', data };
+  }
+
   // ──────────────────────────────────────────────
   // SELLER ENDPOINTS
   // ──────────────────────────────────────────────

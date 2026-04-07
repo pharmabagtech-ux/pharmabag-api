@@ -461,6 +461,10 @@ export class OrdersService {
     }
 
     // 5. Update order status
+    if (dto.status === OrderStatus.CANCELLED) {
+      return this.cancelOrder(userId, orderId, Role.SELLER);
+    }
+
     const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: { orderStatus: dto.status as OrderStatus },
@@ -481,6 +485,70 @@ export class OrdersService {
       `Order ${orderId} status updated to ${dto.status} by seller ${seller.id}`,
     );
 
+    return updated;
+  }
+
+  // ──────────────────────────────────────────────
+  // CANCEL ORDER — Buyer or Admin or Seller
+  // ──────────────────────────────────────────────
+
+  async cancelOrder(userId: string, orderId: string, role: string) {
+    // 1. Fetch order
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: {
+              include: {
+                batches: {
+                  where: { expiryDate: { gt: new Date() } },
+                  orderBy: { expiryDate: 'asc' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    // 2. Permission check
+    if (role === Role.BUYER && order.buyerId !== userId) {
+      throw new ForbiddenException('You do not have permission to cancel this order');
+    }
+
+    // 3. Status validation
+    const uncancelable: OrderStatus[] = [OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED];
+    if (uncancelable.includes(order.orderStatus)) {
+      throw new BadRequestException(`Cannot cancel order in ${order.orderStatus} status`);
+    }
+
+    // 4. Update order and restore stock in a transaction
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // 4a. Update status
+      const cancelled = await tx.order.update({
+        where: { id: orderId },
+        data: { orderStatus: OrderStatus.CANCELLED },
+      });
+
+      // 4b. Restore stock (to the earliest expiry batch)
+      for (const item of order.items) {
+        if (item.product.batches.length > 0) {
+          await tx.productBatch.update({
+            where: { id: item.product.batches[0].id },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+      }
+
+      return cancelled;
+    });
+
+    this.logger.log(`Order ${orderId} was cancelled by ${role} ${userId}`);
     return updated;
   }
 }
