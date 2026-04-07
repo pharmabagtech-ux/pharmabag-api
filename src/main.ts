@@ -36,7 +36,12 @@ async function bootstrap() {
   const allowedOrigins = configService
     .get<string>(
       'CORS_ORIGINS',
-      'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:5173,https://pharmabag-web-admin.vercel.app,https://pharmabag-web-seller.vercel.app,https://pharmabag-web-buyer.vercel.app,https://buyer.pharmabag.com,https://seller.pharmabag.com,https://admin.pharmabag.com,http://pharmabag-api.onrender.com/api,https://pharmabag-api.onrender.com,https://pharmabag.in,https://www.pharmabag.in,https://admin.pharmabag.in,https://seller.pharmabag.in,http://api.pharmabag.in,api.pharmabag.in',
+      'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:5173,http://localhost:5174,http://localhost:5175,' +
+        'http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,' +
+        'https://pharmabag-web-admin.vercel.app,https://pharmabag-web-seller.vercel.app,https://pharmabag-web-buyer.vercel.app,' +
+        'https://buyer.pharmabag.com,https://seller.pharmabag.com,https://admin.pharmabag.com,' +
+        'https://pharmabag-api.onrender.com,https://pharmabag.in,https://www.pharmabag.in,https://admin.pharmabag.in,https://seller.pharmabag.in,https://api.pharmabag.in,' +
+        'http://pharmabag.in,http://www.pharmabag.in,http://admin.pharmabag.in,http://seller.pharmabag.in,http://api.pharmabag.in',
     )
     .split(',')
     .map((o) => o.trim());
