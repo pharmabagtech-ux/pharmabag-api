@@ -326,6 +326,10 @@ export class ProductsService {
       ];
     }
 
+    if ((query as any).status) {
+      where.approvalStatus = (query as any).status.toUpperCase();
+    }
+
     const [products, total] = await Promise.all([
       this.prisma.product.findMany({
         where,

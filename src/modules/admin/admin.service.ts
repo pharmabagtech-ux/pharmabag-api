@@ -1439,13 +1439,13 @@ export class AdminService {
             this.logger.log(`Starting CSV import: ${rawRecords.length} records found`);
 
             // 1. Filter out empty/invalid rows early
-            const records = rawRecords.filter(r => r['PRODUCT NAME']?.trim());
+            const records = rawRecords.filter(r => (r['name'] || r['PRODUCT NAME'])?.trim());
             if (records.length === 0) {
               return resolve({ success: true, recordsProcessed: 0, errors: ['No valid products found in CSV'] });
             }
 
             // 2. Pre-resolve all Categories
-            const uniqueCategoryNames = [...new Set(records.map(r => r['Category']?.trim()).filter(Boolean))] as string[];
+            const uniqueCategoryNames = [...new Set(records.map(r => (r['category'] || r['Category'])?.trim()).filter(Boolean))] as string[];
             const catCache = new Map<string, string>();
             
             // Load existing
@@ -1470,8 +1470,8 @@ export class AdminService {
             // 3. Pre-resolve all Subcategories
             const subCatPairs = new Set<string>(); // "catName|subName"
             records.forEach(r => {
-              const c = r['Category']?.trim() || 'Uncategorized';
-              const s = r['Sub category']?.trim();
+              const c = (r['category'] || r['Category'])?.trim() || 'Uncategorized';
+              const s = (r['subCategory'] || r['Sub category'])?.trim();
               if (s) subCatPairs.add(`${c}|${s}`);
             });
 
@@ -1507,15 +1507,18 @@ export class AdminService {
               
               await Promise.all(chunk.map(async (row) => {
                 try {
-                  const productName = row['PRODUCT NAME']?.trim();
-                  const manufacturer = row['COMPANY NAME']?.trim() || 'UNKNOWN';
-                  const chemicalComposition = row['CHEMICAL COMBINATION']?.trim() || 'N/A';
-                  const categoryName = row['Category']?.trim();
-                  const subCategoryName = row['Sub category']?.trim();
-                  const gstStr = row['GST']?.trim() || '0';
-                  const imageUrl = row['IMAGE URL']?.trim();
+                  const productName = (row['name'] || row['PRODUCT NAME'])?.trim();
+                  const manufacturer = (row['manufacturer'] || row['COMPANY NAME'])?.trim() || 'UNKNOWN';
+                  const chemicalComposition = (row['chemicalComposition'] || row['CHEMICAL COMBINATION'])?.trim() || 'N/A';
+                  const categoryName = (row['category'] || row['Category'])?.trim();
+                  const subCategoryName = (row['subCategory'] || row['Sub category'])?.trim();
+                  const gstStr = String(row['gstPercent'] || row['GST'] || '0').trim();
+                  const mrpStr = String(row['mrp'] || '0').trim();
+                  const description = row['description']?.trim() || '';
+                  const imageUrl = (row['imageUrl'] || row['IMAGE URL'])?.trim();
 
                   const gstPercent = parseFloat(gstStr.replace('%', '')) || 0;
+                  const mrp = parseFloat(mrpStr) || 0;
                   const categoryId = (categoryName && catCache.get(categoryName)) || defaultCatId;
                   
                   let subCategoryId: string;
@@ -1540,6 +1543,8 @@ export class AdminService {
                       name: productName,
                       manufacturer,
                       chemicalComposition,
+                      mrp,
+                      description,
                       gstPercent,
                       categoryId,
                       subCategoryId,
@@ -1551,6 +1556,8 @@ export class AdminService {
                       externalId: row.id || slug,
                       manufacturer,
                       chemicalComposition,
+                      mrp,
+                      description,
                       gstPercent,
                       categoryId,
                       subCategoryId,
