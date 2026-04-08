@@ -196,7 +196,7 @@ export class AuthService {
         await this.prisma.sellerProfile.create({
           data: {
             userId: user.id,
-            companyName: 'My Store',
+            companyName: '',
             gstNumber: '',
             panNumber: '',
             drugLicenseNumber: '',
