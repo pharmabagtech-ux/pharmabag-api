@@ -61,9 +61,4 @@ export class UpdateSellerProfileDto {
   @ApiPropertyOptional()
   @IsOptional()
   gstPanResponse?: any;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  businessName?: string;
 }
