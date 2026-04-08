@@ -701,9 +701,17 @@ export class AdminService {
             ? PaymentStatus.PARTIAL
             : PaymentStatus.PENDING;
 
+      const isInitialStatus =
+        payment.order.orderStatus === OrderStatus.PLACED ||
+        payment.order.orderStatus === OrderStatus.ACCEPTED;
+
       await tx.order.update({
         where: { id: payment.orderId },
-        data: { paymentStatus: newStatus },
+        data: {
+          paymentStatus: newStatus,
+          ...(newStatus === PaymentStatus.SUCCESS &&
+            isInitialStatus && { orderStatus: OrderStatus.PAYMENT_RECEIVED }),
+        },
       });
 
       // If fully paid AND delivered → create seller settlements

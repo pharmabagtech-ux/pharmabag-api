@@ -151,17 +151,7 @@ export class PaymentsService {
       });
     }
 
-    // Set order payment status to SUCCESS immediately (as requested by user)
-    // and also maybe update order status to PAYMENT_RECEIVED
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: { 
-        paymentStatus: PaymentStatus.SUCCESS,
-        orderStatus: OrderStatus.PAYMENT_RECEIVED 
-      },
-    });
-
-    this.logger.log(`Proof uploaded and order ${orderId} marked as SUCCESS/PAYMENT_RECEIVED`);
+    this.logger.log(`Proof uploaded for order ${orderId} — payment ${payment.id}`);
     return payment;
   }
 
@@ -260,9 +250,17 @@ export class PaymentsService {
         payment.order.totalAmount,
       );
 
+      const isInitialStatus =
+        payment.order.orderStatus === OrderStatus.PLACED ||
+        payment.order.orderStatus === OrderStatus.ACCEPTED;
+
       await tx.order.update({
         where: { id: payment.orderId },
-        data: { paymentStatus: newStatus },
+        data: {
+          paymentStatus: newStatus,
+          ...(newStatus === PaymentStatus.SUCCESS &&
+            isInitialStatus && { orderStatus: OrderStatus.PAYMENT_RECEIVED }),
+        },
       });
 
       // 3. If fully paid AND delivered → create seller settlements
