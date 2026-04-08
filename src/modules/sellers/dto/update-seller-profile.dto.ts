@@ -52,9 +52,18 @@ export class UpdateSellerProfileDto {
   @IsString()
   state?: string;
 
-  @ApiPropertyOptional({ example: '110001' })
+  @ApiPropertyOptional({ example: '600001' })
   @IsOptional()
   @IsString()
   @Matches(/^\d{6}$/, { message: 'pincode must be a valid 6-digit code' })
   pincode?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  gstPanResponse?: any;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  businessName?: string;
 }
