@@ -61,4 +61,8 @@ export class UpdateSellerProfileDto {
   @ApiPropertyOptional()
   @IsOptional()
   gstPanResponse?: any;
+
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  isVacation?: boolean;
 }
