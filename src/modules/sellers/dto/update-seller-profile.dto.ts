@@ -37,6 +37,16 @@ export class UpdateSellerProfileDto {
   @IsString()
   drugLicenseUrl?: string;
 
+  @ApiPropertyOptional({ example: 'DL-MH-2024-005678' })
+  @IsOptional()
+  @IsString()
+  drugLicenseNumber2?: string;
+
+  @ApiPropertyOptional({ example: 'https://s3.amazonaws.com/pharmabag-images/drug-license2.pdf' })
+  @IsOptional()
+  @IsString()
+  drugLicenseUrl2?: string;
+
   @ApiPropertyOptional({ example: '456 Industrial Area' })
   @IsOptional()
   @IsString()

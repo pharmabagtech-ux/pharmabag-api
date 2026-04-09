@@ -79,6 +79,8 @@ export class BuyersService {
       panNumber: dto.panNumber ?? null,
       drugLicenseNumber: dto.drugLicenseNumber ?? null,
       drugLicenseUrl: dto.drugLicenseUrl ?? null,
+      drugLicenseNumber2: dto.drugLicenseNumber2 ?? null,
+      drugLicenseUrl2: dto.drugLicenseUrl2 ?? null,
       address: dto.address,
       city: city || null,
       state: state || null,
@@ -174,6 +176,8 @@ export class BuyersService {
         panNumber: dto.panNumber ?? null,
         drugLicenseNumber: dto.drugLicenseNumber ?? null,
         drugLicenseUrl: dto.drugLicenseUrl ?? null,
+        drugLicenseNumber2: dto.drugLicenseNumber2 ?? null,
+        drugLicenseUrl2: dto.drugLicenseUrl2 ?? null,
         address: dto.address,
         city: city || null,
         state: state || null,
@@ -273,7 +277,9 @@ export class BuyersService {
         dto.gstNumber ||
         dto.panNumber ||
         dto.drugLicenseNumber ||
-        dto.drugLicenseUrl)
+        dto.drugLicenseUrl ||
+        dto.drugLicenseNumber2 ||
+        dto.drugLicenseUrl2)
     ) {
       updateData.verificationStatus = 'PENDING';
     }

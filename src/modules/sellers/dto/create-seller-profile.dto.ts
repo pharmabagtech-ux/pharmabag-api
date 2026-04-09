@@ -38,6 +38,16 @@ export class CreateSellerProfileDto {
   @IsNotEmpty()
   drugLicenseUrl: string;
 
+  @ApiProperty({ example: 'DL-MH-654321' })
+  @IsString()
+  @IsNotEmpty()
+  drugLicenseNumber2: string;
+
+  @ApiProperty({ example: 'https://s3.amazonaws.com/drug-license2.pdf' })
+  @IsString()
+  @IsNotEmpty()
+  drugLicenseUrl2: string;
+
   @ApiProperty({ example: '456, Industrial Area, Bhiwandi' })
   @IsString()
   @IsNotEmpty()

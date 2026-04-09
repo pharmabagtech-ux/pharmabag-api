@@ -51,6 +51,8 @@ export class SellersService {
         panNumber: dto.panNumber,
         drugLicenseNumber: dto.drugLicenseNumber,
         drugLicenseUrl: dto.drugLicenseUrl,
+        drugLicenseNumber2: dto.drugLicenseNumber2 ?? null,
+        drugLicenseUrl2: dto.drugLicenseUrl2 ?? null,
         address: dto.address,
         city: dto.city,
         state: dto.state,

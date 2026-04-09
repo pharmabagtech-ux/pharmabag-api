@@ -43,6 +43,8 @@ model BuyerProfile {
   panNumber          String?
   drugLicenseNumber  String?
   drugLicenseUrl     String?
+  drugLicenseNumber2 String?
+  drugLicenseUrl2    String?
   city               String?
   state              String?
   pincode            String?
@@ -77,6 +79,8 @@ model SellerProfile {
   panNumber          String
   drugLicenseNumber  String
   drugLicenseUrl     String
+  drugLicenseNumber2 String?
+  drugLicenseUrl2    String?
   address            String
   city               String
   state              String

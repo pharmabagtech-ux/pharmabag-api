@@ -43,6 +43,16 @@ export class UpdateBuyerProfileDto {
   @IsString()
   drugLicenseUrl?: string;
 
+  @ApiPropertyOptional({ example: 'DL-MH-2024-001234' })
+  @IsOptional()
+  @IsString()
+  drugLicenseNumber2?: string;
+
+  @ApiPropertyOptional({ example: 'https://s3.amazonaws.com/drug-license2.pdf' })
+  @IsOptional()
+  @IsString()
+  drugLicenseUrl2?: string;
+
   @ApiPropertyOptional({ description: 'Structured address object' })
   @IsOptional()
   @IsObject()

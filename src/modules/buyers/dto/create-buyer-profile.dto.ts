@@ -49,15 +49,25 @@ export class CreateBuyerProfileDto {
   })
   panNumber?: string;
 
-  @ApiPropertyOptional({ example: 'DL-MH-123456' })
-  @IsOptional()
+  @ApiProperty({ example: 'DL-MH-123456' })
   @IsString()
-  drugLicenseNumber?: string;
+  @IsNotEmpty()
+  drugLicenseNumber: string;
 
-  @ApiPropertyOptional({ example: 'https://s3.amazonaws.com/drug-license.pdf' })
-  @IsOptional()
+  @ApiProperty({ example: 'https://s3.amazonaws.com/drug-license.pdf' })
   @IsString()
-  drugLicenseUrl?: string;
+  @IsNotEmpty()
+  drugLicenseUrl: string;
+
+  @ApiProperty({ example: 'DL-MH-123456' })
+  @IsString()
+  @IsNotEmpty()
+  drugLicenseNumber2: string;
+
+  @ApiProperty({ example: 'https://s3.amazonaws.com/drug-license2.pdf' })
+  @IsString()
+  @IsNotEmpty()
+  drugLicenseUrl2: string;
 
   @ApiPropertyOptional({
     description: 'Structured address object',
