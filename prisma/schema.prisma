@@ -45,6 +45,8 @@ model BuyerProfile {
   drugLicenseUrl     String?
   drugLicenseNumber2 String?
   drugLicenseUrl2    String?
+  drugLicenseExpiry  DateTime?
+  drugLicenseExpiry2 DateTime?
   city               String?
   state              String?
   pincode            String?
@@ -81,6 +83,8 @@ model SellerProfile {
   drugLicenseUrl     String
   drugLicenseNumber2 String?
   drugLicenseUrl2    String?
+  drugLicenseExpiry  DateTime?
+  drugLicenseExpiry2 DateTime?
   address            String
   city               String
   state              String
