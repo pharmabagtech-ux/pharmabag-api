@@ -1146,10 +1146,16 @@ export class AdminService {
       throw new NotFoundException('Admin not found');
     }
 
-    // Update admin profile
-    const updatedAdmin = await this.prisma.adminProfile.update({
+    // Update or create admin profile (using upsert to avoid 500 if profile is missing)
+    const updatedAdmin = await this.prisma.adminProfile.upsert({
       where: { userId: adminId },
-      data: {
+      create: {
+        userId: adminId,
+        displayName: name || admin.phone,
+        department: department || '',
+        permissions: permissions || '',
+      },
+      update: {
         ...(name && { displayName: name }),
         ...(department !== undefined && { department }),
         ...(permissions !== undefined && { permissions }),
