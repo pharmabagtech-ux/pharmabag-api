@@ -1108,7 +1108,7 @@ export class AdminService {
         email: `admin+${phone}@pharmabag.in`,
         password: '', // Will be set on first login via OTP
         role: 'ADMIN',
-        status: 'APPROVED',
+        status: 'PENDING',
         adminProfile: {
           create: {
             displayName: name,

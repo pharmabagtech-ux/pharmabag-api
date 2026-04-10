@@ -142,6 +142,7 @@ export class AuthService {
         email: true,
         role: true,
         status: true,
+        adminProfile: { select: { id: true, displayName: true, department: true, permissions: true } },
       },
     });
 
@@ -157,6 +158,7 @@ export class AuthService {
           email: true,
           role: true,
           status: true,
+          adminProfile: { select: { id: true, displayName: true, department: true, permissions: true } },
         },
       });
       this.logger.log(`User ${user.id} role updated from previous role to ${suggestedRole} upon login`);
@@ -181,6 +183,7 @@ export class AuthService {
           email: true,
           role: true,
           status: true,
+          adminProfile: { select: { id: true, displayName: true, department: true, permissions: true } },
         },
       });
 
@@ -279,6 +282,7 @@ export class AuthService {
             id: true,
             displayName: true,
             department: true,
+            permissions: true,
           },
         },
       },
