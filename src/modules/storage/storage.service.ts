@@ -95,6 +95,12 @@ export class StorageService {
     return getSignedUrl(this.s3, command, { expiresIn });
   }
 
+  async uploadBlogImage(file: Express.Multer.File): Promise<string> {
+    this.validateFile(file, this.ALLOWED_IMAGE_TYPES);
+    const key = await this.upload(file, 'blog-images');
+    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+  }
+
   private validateFile(
     file: Express.Multer.File,
     allowedTypes: string[],

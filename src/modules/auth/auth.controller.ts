@@ -40,6 +40,24 @@ export class AuthController {
     return this.authService.verifyOtp(dto.phone, dto.otp, dto.role);
   }
 
+  @Post('login-simple')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login with ONLY password (Blog Admin OTP-less)' })
+  @ApiResponse({ status: 200, description: 'Login successful, tokens returned' })
+  @ApiResponse({ status: 401, description: 'Invalid password' })
+  async loginWithSimplePassword(@Body('password') password: string) {
+    return this.authService.loginWithSimplePassword(password);
+  }
+
+  @Post('login-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login with phone and password (Admin only)' })
+  @ApiResponse({ status: 200, description: 'Login successful, tokens returned' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  async loginWithPassword(@Body() dto: { phone: string; password: string }) {
+    return this.authService.loginWithPassword(dto.phone, dto.password);
+  }
+
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh JWT access token' })

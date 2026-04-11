@@ -31,6 +31,11 @@ export class QueryBlogDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  categoryId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   tag?: string;
 
   @ApiPropertyOptional({ enum: BlogStatus })

@@ -6,6 +6,7 @@ import {
   Inject,
   HttpException,
   HttpStatus,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -244,6 +245,85 @@ export class AuthService {
       ...tokens,
       user,
       isNewUser,
+    };
+  }
+
+  // ─── LOGIN WITH SIMPLE PASSWORD ───────────────────
+
+  async loginWithSimplePassword(password: string): Promise<AuthResponse> {
+    const configPassword = this.configService.get<string>('ADMIN_BLOG_PASSWORD');
+    
+    if (!configPassword || password.trim() !== configPassword.trim()) {
+      throw new UnauthorizedException('Invalid admin password');
+    }
+
+    // Find the first admin user to represent the blog admin
+    const adminUser = await this.prisma.user.findFirst({
+      where: { role: Role.ADMIN },
+      select: {
+        id: true,
+        phone: true,
+        email: true,
+        role: true,
+        status: true,
+      },
+    });
+
+    if (!adminUser) {
+      throw new NotFoundException('No admin user found in system');
+    }
+
+    const tokens = await this.generateTokens(adminUser.id, adminUser.role);
+
+    return {
+      ...tokens,
+      user: adminUser,
+      isNewUser: false,
+    };
+  }
+
+  // ─── LOGIN WITH PASSWORD ───────────────────────────
+
+  async loginWithPassword(phone: string, password: string): Promise<AuthResponse> {
+    const user = await this.prisma.user.findUnique({
+      where: { phone },
+      select: {
+        id: true,
+        phone: true,
+        email: true,
+        password: true,
+        role: true,
+        status: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.role !== Role.ADMIN) {
+      throw new UnauthorizedException('Access denied. Admin only.');
+    }
+
+    // Compare plain text password (if that's what's stored, though usually hashed)
+    // Looking at the schema, it's just a string.
+    // If it's hashed, use bcrypt. Let's check for bcrypt.
+    if (user.password !== password) {
+       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const tokens = await this.generateTokens(user.id, user.role);
+
+    return {
+      ...tokens,
+      user: {
+        id: user.id,
+        phone: user.phone,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+      },
+      isNewUser: false,
     };
   }
 

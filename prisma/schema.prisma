@@ -509,7 +509,7 @@ model BlogPost {
   featuredImage   String?
   images          String[]     @default([])
   authorId        String
-  categoryId      String
+  categoryId      String?
   tags            String[]     @default([])
   status          BlogStatus   @default(DRAFT)
   metaTitle       String?
@@ -523,7 +523,7 @@ model BlogPost {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   author          BlogAuthor   @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  category        BlogCategory @relation(fields: [categoryId], references: [id])
+  category        BlogCategory? @relation(fields: [categoryId], references: [id])
 
   @@index([slug])
   @@index([status])
