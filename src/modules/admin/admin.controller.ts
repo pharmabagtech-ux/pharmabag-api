@@ -52,8 +52,8 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get enhanced admin dashboard metrics' })
   @ApiResponse({ status: 200, description: 'Dashboard metrics returned' })
-  async getDashboard() {
-    const data = await this.adminService.getDashboard();
+  async getDashboard(@Query() query: { dateFrom?: string; dateTo?: string }) {
+    const data = await this.adminService.getDashboard(query);
     return { message: 'Dashboard metrics retrieved', data };
   }
 

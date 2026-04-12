@@ -38,8 +38,16 @@ export class AdminService {
   // DASHBOARD
   // ════════════════════════════════════════════════════════
 
-  async getDashboard() {
+  async getDashboard(params: { dateFrom?: string; dateTo?: string } = {}) {
     try {
+      const { dateFrom, dateTo } = params;
+      const dateWhere: any = {};
+      if (dateFrom || dateTo) {
+        dateWhere.createdAt = {};
+        if (dateFrom) dateWhere.createdAt.gte = new Date(dateFrom);
+        if (dateTo) dateWhere.createdAt.lte = new Date(dateTo);
+      }
+
       const [
         totalUsers,
         totalBuyers,
@@ -54,24 +62,40 @@ export class AdminService {
         blockedUsers,
         recentOrders,
       ] = await Promise.all([
-        this.prisma.user.count(),
-        this.prisma.user.count({ where: { role: 'BUYER' } }),
-        this.prisma.user.count({ where: { role: 'SELLER' } }),
-        this.prisma.order.count(),
-        this.prisma.order.aggregate({ _sum: { totalAmount: true } }),
-        this.prisma.order.count({ where: { orderStatus: OrderStatus.PLACED } }),
+        this.prisma.user.count({ where: dateWhere }),
+        this.prisma.user.count({ where: { role: 'BUYER', ...dateWhere } }),
+        this.prisma.user.count({ where: { role: 'SELLER', ...dateWhere } }),
+        this.prisma.order.count({ where: dateWhere }),
+        this.prisma.order.aggregate({
+          where: dateWhere,
+          _sum: { totalAmount: true },
+        }),
+        this.prisma.order.count({
+          where: { orderStatus: OrderStatus.PLACED, ...dateWhere },
+        }),
         this.prisma.payment.count({
-          where: { verificationStatus: PaymentVerificationStatus.PENDING },
+          where: {
+            verificationStatus: PaymentVerificationStatus.PENDING,
+            ...dateWhere,
+          },
         }),
         this.prisma.sellerSettlement.count({
-          where: { payoutStatus: 'PENDING' },
+          where: { payoutStatus: 'PENDING', ...dateWhere },
         }),
-        this.prisma.product.count({ where: { deletedAt: null } }),
+        this.prisma.product.count({
+          where: { deletedAt: null, ...dateWhere },
+        }),
         this.prisma.ticket.count({
-          where: { status: { in: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS] } },
+          where: {
+            status: { in: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS] },
+            ...dateWhere,
+          },
         }),
-        this.prisma.user.count({ where: { status: UserStatus.BLOCKED } }),
+        this.prisma.user.count({
+          where: { status: UserStatus.BLOCKED, ...dateWhere },
+        }),
         this.prisma.order.findMany({
+          where: dateWhere,
           take: 5,
           orderBy: { createdAt: 'desc' },
           select: {
@@ -110,12 +134,18 @@ export class AdminService {
   // ════════════════════════════════════════════════════════
 
   async getAllUsers(query: QueryUsersDto) {
-    const { role, status, search, page = 1, limit = 20 } = query;
+    const { role, status, search, dateFrom, dateTo, page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
     const where: Prisma.UserWhereInput = {};
     if (role) where.role = role;
     if (status) where.status = status;
+
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+      if (dateFrom) (where.createdAt as any).gte = new Date(dateFrom);
+      if (dateTo) (where.createdAt as any).lte = new Date(dateTo);
+    }
 
     if (search) {
       where.OR = [
@@ -774,12 +804,18 @@ export class AdminService {
   // ════════════════════════════════════════════════════════
 
   async getAllSettlements(query: AdminQuerySettlementsDto) {
-    const { status, sellerId, page = 1, limit = 20 } = query;
+    const { status, sellerId, dateFrom, dateTo, page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
     const where: Prisma.SellerSettlementWhereInput = {};
     if (status) where.payoutStatus = status;
     if (sellerId) where.sellerId = sellerId;
+
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+      if (dateFrom) (where.createdAt as any).gte = new Date(dateFrom);
+      if (dateTo) (where.createdAt as any).lte = new Date(dateTo);
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.sellerSettlement.findMany({

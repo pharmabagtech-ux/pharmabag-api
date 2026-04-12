@@ -19,6 +19,16 @@ export class QueryUsersDto {
   @IsString()
   search?: string;
 
+  @ApiPropertyOptional({ example: '2025-01-01', description: 'Filter users from this date (ISO)' })
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ example: '2025-12-31', description: 'Filter users until this date (ISO)' })
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
+
   @ApiPropertyOptional({ example: 1, default: 1, description: 'Page number' })
   @IsOptional()
   @Type(() => Number)
