@@ -800,6 +800,52 @@ export class AdminService {
   }
 
   // ════════════════════════════════════════════════════════
+  // MARKETING MANAGEMENT
+  // ════════════════════════════════════════════════════════
+
+  async getMarketingProducts(slot?: any) {
+    return this.prisma.marketingProduct.findMany({
+      where: slot ? { slot } : {},
+      include: {
+        product: {
+          include: {
+            images: { take: 1 },
+            seller: { select: { companyName: true } },
+          },
+        },
+      },
+      orderBy: { priority: 'desc' },
+    });
+  }
+
+  async addMarketingProduct(dto: any) {
+    const existing = await this.prisma.marketingProduct.findFirst({
+      where: { productId: dto.productId, slot: dto.slot },
+    });
+
+    if (existing) {
+      return this.prisma.marketingProduct.update({
+        where: { id: existing.id },
+        data: { priority: dto.priority ?? 0 },
+      });
+    }
+
+    return this.prisma.marketingProduct.create({
+      data: {
+        productId: dto.productId,
+        slot: dto.slot,
+        priority: dto.priority ?? 0,
+      },
+    });
+  }
+
+  async removeMarketingProduct(id: string) {
+    return this.prisma.marketingProduct.delete({
+      where: { id },
+    });
+  }
+
+  // ════════════════════════════════════════════════════════
   // SETTLEMENT MANAGEMENT
   // ════════════════════════════════════════════════════════
 

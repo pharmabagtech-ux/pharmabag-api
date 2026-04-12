@@ -8,25 +8,25 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(uuid())
-  phone         String         @unique
-  email         String?        @unique
-  password      String
-  role          Role
-  status        UserStatus     @default(NEW)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  legacyId      String?        @unique
-  adminProfile  AdminProfile?
-  buyerProfile  BuyerProfile?
-  cart          Cart?
-  messages      Message[]
-  notifications Notification[]
-  orders        Order[]
-  reviews       Review[]
-  sellerProfile SellerProfile?
-  tickets       Ticket[]
+  id                     String                  @id @default(uuid())
+  phone                  String                  @unique
+  email                  String?                 @unique
+  password               String
+  role                   Role
+  status                 UserStatus              @default(NEW)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  legacyId               String?                 @unique
+  adminProfile           AdminProfile?
+  buyerProfile           BuyerProfile?
+  cart                   Cart?
+  messages               Message[]
   notificationBroadcasts NotificationBroadcast[]
+  notifications          Notification[]
+  orders                 Order[]
+  reviews                Review[]
+  sellerProfile          SellerProfile?
+  tickets                Ticket[]
 
   @@index([role])
   @@index([status])
@@ -43,10 +43,6 @@ model BuyerProfile {
   panNumber          String?
   drugLicenseNumber  String?
   drugLicenseUrl     String?
-  drugLicenseNumber2 String?
-  drugLicenseUrl2    String?
-  drugLicenseExpiry  DateTime?
-  drugLicenseExpiry2 DateTime?
   city               String?
   state              String?
   pincode            String?
@@ -63,6 +59,10 @@ model BuyerProfile {
   licence            Json?
   verificationStatus VerificationStatus @default(UNVERIFIED)
   address            Json?
+  drugLicenseNumber2 String?
+  drugLicenseUrl2    String?
+  drugLicenseExpiry  DateTime?
+  drugLicenseExpiry2 DateTime?
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([city])
@@ -81,10 +81,6 @@ model SellerProfile {
   panNumber          String
   drugLicenseNumber  String
   drugLicenseUrl     String
-  drugLicenseNumber2 String?
-  drugLicenseUrl2    String?
-  drugLicenseExpiry  DateTime?
-  drugLicenseExpiry2 DateTime?
   address            String
   city               String
   state              String
@@ -96,6 +92,10 @@ model SellerProfile {
   updatedAt          DateTime           @updatedAt
   creditTier         CreditTier?
   gstPanResponse     Json?
+  drugLicenseNumber2 String?
+  drugLicenseUrl2    String?
+  drugLicenseExpiry  DateTime?
+  drugLicenseExpiry2 DateTime?
   orderItems         OrderItem[]
   products           Product[]
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -186,6 +186,8 @@ model Product {
   seller               SellerProfile         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   subCategory          SubCategory           @relation(fields: [subCategoryId], references: [id])
   reviews              Review[]
+
+  marketingProducts    MarketingProduct[]
 
   @@index([sellerId])
   @@index([categoryId])
@@ -501,28 +503,28 @@ model BlogCategory {
 }
 
 model BlogPost {
-  id              String       @id @default(uuid())
+  id              String        @id @default(uuid())
   title           String
-  slug            String       @unique
+  slug            String        @unique
   excerpt         String?
   content         Json
   featuredImage   String?
-  images          String[]     @default([])
+  images          String[]      @default([])
   authorId        String
   categoryId      String?
-  tags            String[]     @default([])
-  status          BlogStatus   @default(DRAFT)
+  tags            String[]      @default([])
+  status          BlogStatus    @default(DRAFT)
   metaTitle       String?
   metaDescription String?
-  metaKeywords    String[]     @default([])
+  metaKeywords    String[]      @default([])
   canonicalUrl    String?
   ogImage         String?
-  readingTime     Int          @default(0)
-  views           Int          @default(0)
+  readingTime     Int           @default(0)
+  views           Int           @default(0)
   publishedAt     DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  author          BlogAuthor   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  author          BlogAuthor    @relation(fields: [authorId], references: [id], onDelete: Cascade)
   category        BlogCategory? @relation(fields: [categoryId], references: [id])
 
   @@index([slug])
@@ -628,6 +630,26 @@ model MasterProductImage {
 
   @@index([masterProductId])
   @@map("master_product_images")
+}
+
+model MarketingProduct {
+  id        String        @id @default(uuid())
+  productId String
+  slot      MarketingSlot
+  active    Boolean       @default(true)
+  priority  Int           @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  product   Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([slot])
+  @@index([active])
+  @@map("marketing_products")
+}
+
+enum MarketingSlot {
+  HOMEPAGE_CAROUSEL
+  LOGIN_CAROUSEL
 }
 
 enum Role {

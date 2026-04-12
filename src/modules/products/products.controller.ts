@@ -64,6 +64,15 @@ export class ProductsController {
     return { message: 'Suggestions retrieved successfully', data };
   }
 
+  @Get('featured')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get featured products for marketing carousels (homepage/login)' })
+  @ApiResponse({ status: 200, description: 'Featured products list' })
+  async getFeatured(@Query('slot') slot: 'HOMEPAGE_CAROUSEL' | 'LOGIN_CAROUSEL') {
+    const data = await this.productsService.getFeatured(slot);
+    return { message: 'Featured products retrieved successfully', data };
+  }
+
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get single product by ID' })

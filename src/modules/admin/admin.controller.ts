@@ -31,6 +31,7 @@ import { AdminUpdateTicketStatusDto } from './dto/admin-update-ticket-status.dto
 import { AdminReplyTicketDto } from './dto/admin-reply-ticket.dto';
 import { MarkPaidDto } from '../settlements/dto/mark-paid.dto';
 import { UpdateGstPanStatusDto } from './dto/update-gst-pan-status.dto';
+import { AddMarketingProductDto } from './dto/add-marketing-product.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadedFile, UseInterceptors } from '@nestjs/common';
 import { AdminQuerySuggestionsDto } from './dto/query-suggestions.dto';
@@ -587,6 +588,34 @@ export class AdminController {
   async deleteSuggestion(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.adminService.deleteSuggestion(id);
     return { message: 'Suggestion deleted successfully', data };
+  }
+
+  // ════════════════════════════════════════════════════════
+  // MARKETING
+  // ════════════════════════════════════════════════════════
+
+  @Get('marketing')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'List marketing products' })
+  async getMarketingProducts(@Query('slot') slot?: string) {
+    const data = await this.adminService.getMarketingProducts(slot);
+    return { message: 'Marketing products retrieved', data };
+  }
+
+  @Post('marketing')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Add product to marketing carousel' })
+  async addMarketingProduct(@Body() dto: AddMarketingProductDto) {
+    const data = await this.adminService.addMarketingProduct(dto);
+    return { message: 'Product added to marketing successfully', data };
+  }
+
+  @Delete('marketing/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove product from marketing' })
+  async removeMarketingProduct(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.adminService.removeMarketingProduct(id);
+    return { message: 'Product removed from marketing successfully', data };
   }
 }
 

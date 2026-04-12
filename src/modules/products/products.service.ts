@@ -628,6 +628,27 @@ export class ProductsService {
     });
   }
 
+  async getFeatured(slot: any) {
+    const featured = await this.prisma.marketingProduct.findMany({
+      where: { slot, active: true },
+      include: {
+        product: {
+          include: {
+            category: true,
+            subCategory: true,
+            batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
+            seller: { select: { companyName: true, city: true, state: true, rating: true } },
+            images: true,
+          },
+        },
+      },
+      orderBy: { priority: 'desc' },
+      take: 12, // limit to 12 featured products per slot
+    });
+
+    return featured.map((f) => this.flattenProduct(f.product));
+  }
+
   // ──────────────────────────────────────────────
   // HELPERS
   // ──────────────────────────────────────────────
