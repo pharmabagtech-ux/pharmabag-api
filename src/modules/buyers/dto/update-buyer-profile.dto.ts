@@ -43,6 +43,11 @@ export class UpdateBuyerProfileDto {
   @IsString()
   drugLicenseUrl?: string;
 
+  @ApiPropertyOptional({ example: '2026-12-31' })
+  @IsOptional()
+  @IsString()
+  drugLicenseExpiry?: string;
+
   @ApiPropertyOptional({ example: 'DL-MH-2024-001234' })
   @IsOptional()
   @IsString()
@@ -52,6 +57,11 @@ export class UpdateBuyerProfileDto {
   @IsOptional()
   @IsString()
   drugLicenseUrl2?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-31' })
+  @IsOptional()
+  @IsString()
+  drugLicenseExpiry2?: string;
 
   @ApiPropertyOptional({ description: 'Structured address object' })
   @IsOptional()

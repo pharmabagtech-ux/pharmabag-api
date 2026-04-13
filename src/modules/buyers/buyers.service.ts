@@ -79,8 +79,10 @@ export class BuyersService {
       panNumber: dto.panNumber ?? null,
       drugLicenseNumber: dto.drugLicenseNumber ?? null,
       drugLicenseUrl: dto.drugLicenseUrl ?? null,
+      drugLicenseExpiry: dto.drugLicenseExpiry ? new Date(dto.drugLicenseExpiry) : null,
       drugLicenseNumber2: dto.drugLicenseNumber2 ?? null,
       drugLicenseUrl2: dto.drugLicenseUrl2 ?? null,
+      drugLicenseExpiry2: dto.drugLicenseExpiry2 ? new Date(dto.drugLicenseExpiry2) : null,
       address: dto.address,
       city: city || null,
       state: state || null,
@@ -176,8 +178,10 @@ export class BuyersService {
         panNumber: dto.panNumber ?? null,
         drugLicenseNumber: dto.drugLicenseNumber ?? null,
         drugLicenseUrl: dto.drugLicenseUrl ?? null,
+        drugLicenseExpiry: dto.drugLicenseExpiry ? new Date(dto.drugLicenseExpiry) : null,
         drugLicenseNumber2: dto.drugLicenseNumber2 ?? null,
         drugLicenseUrl2: dto.drugLicenseUrl2 ?? null,
+        drugLicenseExpiry2: dto.drugLicenseExpiry2 ? new Date(dto.drugLicenseExpiry2) : null,
         address: dto.address,
         city: city || null,
         state: state || null,
@@ -278,11 +282,16 @@ export class BuyersService {
         dto.panNumber ||
         dto.drugLicenseNumber ||
         dto.drugLicenseUrl ||
+        dto.drugLicenseExpiry ||
         dto.drugLicenseNumber2 ||
-        dto.drugLicenseUrl2)
+        dto.drugLicenseUrl2 ||
+        dto.drugLicenseExpiry2)
     ) {
       updateData.verificationStatus = 'PENDING';
     }
+
+    if (dto.drugLicenseExpiry) updateData.drugLicenseExpiry = new Date(dto.drugLicenseExpiry);
+    if (dto.drugLicenseExpiry2) updateData.drugLicenseExpiry2 = new Date(dto.drugLicenseExpiry2);
 
     const profile = await this.prisma.buyerProfile.update({
       where: { userId },

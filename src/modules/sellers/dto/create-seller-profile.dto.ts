@@ -4,7 +4,7 @@ import {
   IsOptional,
   Matches,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateSellerProfileDto {
   @ApiProperty({ example: 'PharmaDist India Pvt Ltd' })
@@ -38,6 +38,11 @@ export class CreateSellerProfileDto {
   @IsNotEmpty()
   drugLicenseUrl: string;
 
+  @ApiPropertyOptional({ example: '2026-12-31' })
+  @IsOptional()
+  @IsString()
+  drugLicenseExpiry?: string;
+
   @ApiProperty({ example: 'DL-MH-654321' })
   @IsString()
   @IsNotEmpty()
@@ -47,6 +52,11 @@ export class CreateSellerProfileDto {
   @IsString()
   @IsNotEmpty()
   drugLicenseUrl2: string;
+
+  @ApiPropertyOptional({ example: '2026-12-31' })
+  @IsOptional()
+  @IsString()
+  drugLicenseExpiry2?: string;
 
   @ApiProperty({ example: '456, Industrial Area, Bhiwandi' })
   @IsString()

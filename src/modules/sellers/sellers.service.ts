@@ -51,8 +51,10 @@ export class SellersService {
         panNumber: dto.panNumber,
         drugLicenseNumber: dto.drugLicenseNumber,
         drugLicenseUrl: dto.drugLicenseUrl,
+        drugLicenseExpiry: dto.drugLicenseExpiry ? new Date(dto.drugLicenseExpiry) : null,
         drugLicenseNumber2: dto.drugLicenseNumber2 ?? null,
         drugLicenseUrl2: dto.drugLicenseUrl2 ?? null,
+        drugLicenseExpiry2: dto.drugLicenseExpiry2 ? new Date(dto.drugLicenseExpiry2) : null,
         address: dto.address,
         city: dto.city,
         state: dto.state,
@@ -109,6 +111,8 @@ export class SellersService {
       where: { userId },
       data: {
         ...dto,
+        drugLicenseExpiry: dto.drugLicenseExpiry ? new Date(dto.drugLicenseExpiry) : undefined,
+        drugLicenseExpiry2: dto.drugLicenseExpiry2 ? new Date(dto.drugLicenseExpiry2) : undefined,
         ...(isFirstUpdate && { verificationStatus: 'PENDING' }),
       },
     });

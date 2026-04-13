@@ -47,6 +47,16 @@ export class UpdateSellerProfileDto {
   @IsString()
   drugLicenseUrl2?: string;
 
+  @ApiPropertyOptional({ example: '2026-12-31' })
+  @IsOptional()
+  @IsString()
+  drugLicenseExpiry?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-31' })
+  @IsOptional()
+  @IsString()
+  drugLicenseExpiry2?: string;
+
   @ApiPropertyOptional({ example: '456 Industrial Area' })
   @IsOptional()
   @IsString()
