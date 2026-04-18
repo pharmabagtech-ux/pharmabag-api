@@ -566,6 +566,7 @@ export class AdminService {
               totalPrice: true,
               product: { select: { id: true, name: true } },
               seller: { select: { id: true, companyName: true } },
+              settlement: { select: { id: true, payoutStatus: true } },
             },
           },
           address: true,
@@ -625,21 +626,46 @@ export class AdminService {
   }
 
   async adminUpdateOrderStatus(orderId: string, dto: AdminUpdateOrderStatusDto) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.order.findUnique({ 
+      where: { id: orderId },
+      include: { items: true }
+    });
     if (!order) throw new NotFoundException('Order not found');
 
     const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: { orderStatus: dto.status },
-      select: {
-        id: true,
-        totalAmount: true,
-        orderStatus: true,
-        paymentStatus: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
+        buyer: { select: { phone: true, buyerProfile: { select: { legalName: true } } } },
+        items: {
+          include: {
+            product: { select: { name: true } },
+            seller: { select: { companyName: true } },
+          },
+        },
       },
     });
+
+    // Create settlements if status is DELIVERED and payment is successful
+    if (updated.orderStatus === OrderStatus.DELIVERED && updated.paymentStatus === PaymentStatus.SUCCESS) {
+      for (const item of updated.items) {
+        const existing = await this.prisma.sellerSettlement.findUnique({
+          where: { orderItemId: item.id },
+        });
+        if (!existing) {
+          const commission = +(item.totalPrice * 0.05).toFixed(2);
+          await this.prisma.sellerSettlement.create({
+            data: {
+              sellerId: item.sellerId,
+              orderItemId: item.id,
+              amount: +(item.totalPrice - commission).toFixed(2),
+              commission,
+              payoutStatus: 'PENDING',
+            },
+          });
+        }
+      }
+    }
 
     this.logger.log(`Order ${orderId} status overridden to ${dto.status} by admin`);
     return updated;
@@ -844,18 +870,14 @@ export class AdminService {
       where: { id },
     });
   }
-
-  // ════════════════════════════════════════════════════════
-  // SETTLEMENT MANAGEMENT
-  // ════════════════════════════════════════════════════════
-
   async getAllSettlements(query: AdminQuerySettlementsDto) {
-    const { status, sellerId, dateFrom, dateTo, page = 1, limit = 20 } = query;
+    const { status, sellerId, orderItemId, dateFrom, dateTo, page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
     const where: Prisma.SellerSettlementWhereInput = {};
     if (status) where.payoutStatus = status;
     if (sellerId) where.sellerId = sellerId;
+    if (orderItemId) where.orderItemId = orderItemId;
 
     if (dateFrom || dateTo) {
       where.createdAt = {};
@@ -871,6 +893,7 @@ export class AdminService {
           seller: { select: { id: true, companyName: true, userId: true } },
           orderItem: {
             select: {
+              id: true,
               orderId: true,
               totalPrice: true,
               product: { select: { id: true, name: true } },
@@ -886,7 +909,7 @@ export class AdminService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async markSettlementPaid(settlementId: string, payoutReference: string) {
+  async markSettlementPaid(settlementId: string, payoutReference: string, paymentProofUrl?: string) {
     const settlement = await this.prisma.sellerSettlement.findUnique({
       where: { id: settlementId },
     });
@@ -901,13 +924,65 @@ export class AdminService {
       data: {
         payoutStatus: 'PAID',
         payoutReference,
+        paymentProofUrl,
         payoutDate: new Date(),
-      },
+      } as any,
       include: { seller: { select: { id: true, companyName: true } } },
     });
 
     this.logger.log(`Settlement ${settlementId} marked as paid by admin`);
     return updated;
+  }
+
+  async syncSettlements() {
+    const orders = await this.prisma.order.findMany({
+      where: {
+        orderStatus: OrderStatus.DELIVERED,
+      },
+      include: { items: true },
+    });
+
+    let createdCount = 0;
+    for (const order of orders) {
+      for (const item of order.items) {
+        const existing = await this.prisma.sellerSettlement.findUnique({
+          where: { orderItemId: item.id },
+        });
+
+        if (!existing) {
+          const commission = 0;
+          await this.prisma.sellerSettlement.create({
+            data: {
+              sellerId: item.sellerId,
+              orderItemId: item.id,
+              amount: item.totalPrice,
+              commission,
+              payoutStatus: 'PENDING',
+            },
+          });
+          createdCount++;
+        }
+      }
+    }
+
+    const allItemIds = orders.flatMap(o => o.items.map(i => i.id));
+    this.logger.log(`Sync settlements completed: ${createdCount} new records created.`);
+    const syncedSettlements = await this.prisma.sellerSettlement.findMany({
+      where: { orderItemId: { in: allItemIds } },
+      include: {
+        seller: { select: { id: true, companyName: true, userId: true } },
+        orderItem: {
+          select: {
+            id: true,
+            orderId: true,
+            totalPrice: true,
+            product: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    return syncedSettlements;
   }
 
   // ════════════════════════════════════════════════════════

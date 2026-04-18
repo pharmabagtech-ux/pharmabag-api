@@ -6,4 +6,7 @@ export class MarkPaidDto {
   @IsString()
   @IsNotEmpty({ message: 'Payout reference is required' })
   payoutReference: string;
+  @ApiProperty({ example: 'https://example.com/proof.pdf', description: 'URL of the payout proof document', required: false })
+  @IsString()
+  paymentProofUrl?: string;
 }

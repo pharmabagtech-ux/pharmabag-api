@@ -305,6 +305,14 @@ export class AdminController {
     return { message: 'Settlements retrieved successfully', data };
   }
 
+  @Post('settlements/sync')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Sync missing settlements for all delivered and paid orders' })
+  async syncSettlements() {
+    const data = await this.adminService.syncSettlements();
+    return { message: 'Settlement sync completed', data };
+  }
+
   @Patch('settlements/:id/mark-paid')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mark a settlement as paid with payout reference' })
@@ -315,7 +323,7 @@ export class AdminController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: MarkPaidDto,
   ) {
-    const data = await this.adminService.markSettlementPaid(id, dto.payoutReference);
+    const data = await this.adminService.markSettlementPaid(id, dto.payoutReference, dto.paymentProofUrl);
     return { message: 'Settlement marked as paid', data };
   }
 

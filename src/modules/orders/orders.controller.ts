@@ -5,6 +5,7 @@ import {
   Patch,
   Body,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -62,8 +63,12 @@ export class OrdersController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'List orders for current seller' })
   @ApiResponse({ status: 200, description: 'Seller orders returned' })
-  async getSellerOrders(@CurrentUser('id') userId: string) {
-    const data = await this.ordersService.getSellerOrders(userId);
+  async getSellerOrders(
+    @CurrentUser('id') userId: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    const data = await this.ordersService.getSellerOrders(userId, dateFrom, dateTo);
     return { message: 'Seller orders retrieved successfully', data };
   }
 

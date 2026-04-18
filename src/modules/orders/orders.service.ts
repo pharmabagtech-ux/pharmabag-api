@@ -8,7 +8,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
-import { OrderStatus, Role } from '@prisma/client';
+import { OrderStatus, Role, PaymentStatus } from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
@@ -326,7 +326,7 @@ export class OrdersService {
   // GET SELLER ORDERS
   // ──────────────────────────────────────────────
 
-  async getSellerOrders(userId: string) {
+  async getSellerOrders(userId: string, dateFrom?: string, dateTo?: string) {
     // Find seller profile
     const seller = await this.prisma.sellerProfile.findUnique({
       where: { userId },
@@ -336,9 +336,19 @@ export class OrdersService {
       throw new NotFoundException('Seller profile not found');
     }
 
+    const where: any = { sellerId: seller.id };
+
+    if (dateFrom || dateTo) {
+      where.order = {
+        createdAt: {}
+      };
+      if (dateFrom) where.order.createdAt.gte = new Date(dateFrom);
+      if (dateTo) where.order.createdAt.lte = new Date(dateTo);
+    }
+
     // Fetch order items belonging to this seller, grouped by order
     const orderItems = await this.prisma.orderItem.findMany({
-      where: { sellerId: seller.id },
+      where,
       include: {
         product: {
           select: {
@@ -472,7 +482,6 @@ export class OrdersService {
       data: { orderStatus: dto.status as OrderStatus },
       include: {
         items: {
-          where: { sellerId: seller.id },
           include: {
             product: {
               select: { id: true, name: true },
@@ -482,6 +491,27 @@ export class OrdersService {
         address: true,
       },
     });
+
+    // Create settlements if status is DELIVERED and payment is successful
+    if (updated.orderStatus === OrderStatus.DELIVERED && updated.paymentStatus === PaymentStatus.SUCCESS) {
+      for (const item of updated.items) {
+        const existing = await this.prisma.sellerSettlement.findUnique({
+          where: { orderItemId: item.id },
+        });
+        if (!existing) {
+          const commission = +(item.totalPrice * 0.05).toFixed(2);
+          await this.prisma.sellerSettlement.create({
+            data: {
+              sellerId: item.sellerId,
+              orderItemId: item.id,
+              amount: +(item.totalPrice - commission).toFixed(2),
+              commission,
+              payoutStatus: 'PENDING',
+            },
+          });
+        }
+      }
+    }
 
     this.logger.log(
       `Order ${orderId} status updated to ${dto.status} by seller ${seller.id}`,

@@ -29,6 +29,7 @@ import { BlogModule } from './modules/blog/blog.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { MigrationModule } from './modules/migration/migration.module';
 import { VerificationModule } from './modules/verification/verification.module';
+import { ReferralModule } from './modules/referrals/referral.module';
 
 @Module({
   imports: [
@@ -103,6 +104,7 @@ import { VerificationModule } from './modules/verification/verification.module';
     CategoriesModule,
     MigrationModule,
     VerificationModule,
+    ReferralModule,
   ],
   providers: [
     // Apply throttler guard globally

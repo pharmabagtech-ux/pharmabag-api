@@ -64,6 +64,7 @@ model BuyerProfile {
   drugLicenseExpiry  DateTime?
   drugLicenseExpiry2 DateTime?
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referralCodes      ReferralCode[]     @relation("ReferrerCodes")
 
   @@index([city])
   @@index([state])
@@ -255,6 +256,8 @@ model Order {
   items         OrderItem[]
   buyer         User          @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   payments      Payment[]
+  referralCodeId String?
+  referralCode   ReferralCode? @relation(fields: [referralCodeId], references: [id])
 
   @@index([buyerId])
   @@index([orderStatus])
@@ -469,6 +472,7 @@ model SellerSettlement {
   orderItemId     String        @unique
   payoutDate      DateTime?
   payoutReference String?
+  paymentProofUrl String?
   payoutStatus    String        @default("PENDING")
   updatedAt       DateTime      @updatedAt
   orderItem       OrderItem     @relation(fields: [orderItemId], references: [id])
@@ -764,4 +768,19 @@ enum MigrationRecordStatus {
   SUCCESS
   SKIPPED
   FAILED
+}
+
+model ReferralCode {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  buyerId     String?
+  isActive    Boolean  @default(true)
+  usedCount   Int      @default(0)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  buyer       BuyerProfile? @relation("ReferrerCodes", fields: [buyerId], references: [id])
+  orders      Order[]
+
+  @@map("referral_codes")
 }

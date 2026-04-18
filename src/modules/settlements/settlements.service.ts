@@ -18,7 +18,7 @@ export class SettlementsService {
   /**
    * Get all settlements for the authenticated seller.
    */
-  async getSellerSettlements(userId: string) {
+  async getSellerSettlements(userId: string, dateFrom?: string, dateTo?: string) {
     const seller = await this.prisma.sellerProfile.findUnique({
       where: { userId },
     });
@@ -27,8 +27,15 @@ export class SettlementsService {
       throw new NotFoundException('Seller profile not found');
     }
 
+    const where: any = { sellerId: seller.id };
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+      if (dateFrom) where.createdAt.gte = new Date(dateFrom);
+      if (dateTo) where.createdAt.lte = new Date(dateTo);
+    }
+
     const settlements = await this.prisma.sellerSettlement.findMany({
-      where: { sellerId: seller.id },
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         orderItem: {

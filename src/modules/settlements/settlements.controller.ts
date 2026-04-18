@@ -33,8 +33,12 @@ export class SettlementsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get seller settlements' })
   @ApiResponse({ status: 200, description: 'Seller settlements returned' })
-  async getSellerSettlements(@CurrentUser('id') userId: string) {
-    const data = await this.settlementsService.getSellerSettlements(userId);
+  async getSellerSettlements(
+    @CurrentUser('id') userId: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    const data = await this.settlementsService.getSellerSettlements(userId, dateFrom, dateTo);
     return { message: 'Settlements retrieved', data };
   }
 

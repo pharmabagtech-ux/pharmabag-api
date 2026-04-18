@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class AdminQuerySuggestionsDto {
@@ -25,11 +25,12 @@ export class AdminQuerySuggestionsDto {
   @Min(1)
   page?: number = 1;
 
-  @ApiPropertyOptional({ description: 'Items per page', default: 20 })
+  @ApiPropertyOptional({ description: 'Items per page (max 500)', default: 20 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(500)
   limit?: number = 20;
 
   @ApiPropertyOptional({ description: 'Filter by active status' })
