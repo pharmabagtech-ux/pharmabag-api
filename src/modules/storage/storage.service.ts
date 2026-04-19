@@ -102,7 +102,7 @@ export class StorageService {
   }
 
   async uploadSettlementProof(file: Express.Multer.File): Promise<string> {
-    this.validateFile(file, this.ALLOWED_IMAGE_TYPES);
+    this.validateFile(file, this.ALLOWED_DOC_TYPES);
     const key = await this.upload(file, 'settlement-proofs');
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
   }
