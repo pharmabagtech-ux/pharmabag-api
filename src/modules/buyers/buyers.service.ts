@@ -73,6 +73,15 @@ export class BuyersService {
     const state = addr?.state ?? dto.address?.['state'] ?? '';
     const pincode = addr?.pincode ?? dto.address?.['pincode'] ?? '';
 
+    // Resolve referral code if provided
+    let referralCodeId: string | null = null;
+    if (dto.inviteCode) {
+      const ref = await (this.prisma as any).referralCode.findUnique({
+        where: { code: dto.inviteCode.toUpperCase() },
+      });
+      if (ref) referralCodeId = ref.id;
+    }
+
     const profileData = {
       legalName: dto.legalName,
       gstNumber: dto.gstNumber ?? null,
@@ -95,6 +104,7 @@ export class BuyersService {
       cancelCheck: dto.cancelCheck ?? null,
       document: dto.document ?? null,
       inviteCode: dto.inviteCode ?? null,
+      referralCodeId,
       verificationStatus: 'PENDING' as const, // Always pending — admin must verify
       creditTier: null, // status 0 — no tier until admin approves
     };
@@ -265,6 +275,14 @@ export class BuyersService {
     }
 
     const updateData: any = { ...dto };
+
+    if (dto.inviteCode) {
+      const ref = await (this.prisma as any).referralCode.findUnique({
+        where: { code: dto.inviteCode.toUpperCase() },
+      });
+      if (ref) updateData.referralCodeId = ref.id;
+    }
+
     // Extract city/state/pincode from address if provided
     if (dto.address) {
       const addr = dto.address as any;

@@ -56,6 +56,8 @@ model BuyerProfile {
   document           String?
   gstPanResponse     Json?
   inviteCode         String?
+  referralCodeId     String?
+  referralCode       ReferralCode?      @relation("ReferredBuyers", fields: [referralCodeId], references: [id])
   licence            Json?
   verificationStatus VerificationStatus @default(UNVERIFIED)
   address            Json?
@@ -65,6 +67,7 @@ model BuyerProfile {
   drugLicenseExpiry2 DateTime?
   user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   referralCodes      ReferralCode[]     @relation("ReferrerCodes")
+  customOrders       CustomOrder[]
 
   @@index([city])
   @@index([state])
@@ -616,6 +619,7 @@ model MasterProduct {
   category            Category             @relation(fields: [categoryId], references: [id])
   subCategory         SubCategory          @relation(fields: [subCategoryId], references: [id])
   products            Product[]
+  customOrders        CustomOrder[]
 
   @@index([name])
   @@index([manufacturer])
@@ -781,6 +785,28 @@ model ReferralCode {
   updatedAt   DateTime @updatedAt
   buyer       BuyerProfile? @relation("ReferrerCodes", fields: [buyerId], references: [id])
   orders      Order[]
+  referredBuyers BuyerProfile[] @relation("ReferredBuyers")
 
   @@map("referral_codes")
+}
+model CustomOrder {
+  id        String   @id @default(uuid())
+  buyerId   String
+  productId String?
+  message   String   @db.Text
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  buyer   BuyerProfile  @relation(fields: [buyerId], references: [id])
+  product MasterProduct? @relation(fields: [productId], references: [id])
+
+  @@map("custom_orders")
+}
+
+enum CustomOrderStatus {
+  PENDING
+  REVIEWED
+  COMPLETED
+  CANCELLED
 }

@@ -30,6 +30,7 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { MigrationModule } from './modules/migration/migration.module';
 import { VerificationModule } from './modules/verification/verification.module';
 import { ReferralModule } from './modules/referrals/referral.module';
+import { CustomOrdersModule } from './modules/custom-orders/custom-orders.module';
 
 @Module({
   imports: [
@@ -105,6 +106,7 @@ import { ReferralModule } from './modules/referrals/referral.module';
     MigrationModule,
     VerificationModule,
     ReferralModule,
+    CustomOrdersModule,
   ],
   providers: [
     // Apply throttler guard globally

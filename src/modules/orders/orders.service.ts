@@ -54,7 +54,7 @@ export class OrdersService {
     // 1b. Verify buyer profile is approved
     const buyerProfile = await this.prisma.buyerProfile.findUnique({
       where: { userId },
-      select: { verificationStatus: true, creditTier: true, legalName: true },
+      select: { verificationStatus: true, creditTier: true, legalName: true, referralCodeId: true },
     });
 
     if (!buyerProfile || !buyerProfile.legalName) {
@@ -125,6 +125,7 @@ export class OrdersService {
           buyerId: userId,
           totalAmount,
           orderStatus: OrderStatus.PLACED,
+          referralCodeId: buyerProfile.referralCodeId,
         },
       });
 
