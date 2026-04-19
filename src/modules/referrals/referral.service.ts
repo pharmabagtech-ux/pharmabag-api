@@ -40,17 +40,68 @@ export class ReferralService {
             user: { select: { phone: true } },
           },
         },
+        // Layer 1: Directly tagged orders
         orders: {
-          select: { totalAmount: true }
+          select: { id: true, totalAmount: true, orderStatus: true }
+        },
+        // Layer 2 & 3: Buyers linked by ID OR by String match
+        referredBuyers: {
+          select: {
+            user: {
+              select: {
+                orders: {
+                  where: { referralCodeId: null },
+                  select: { totalAmount: true, orderStatus: true }
+                }
+              }
+            }
+          }
         }
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return codes.map(c => ({
-      ...c,
-      totalRevenue: c.orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+    // Layer 3 (Manual string match): Find buyers who have the string matching the code but no ID link
+    const allCodes = await Promise.all(codes.map(async (c) => {
+      const stringMatchedBuyers = await this.prisma.buyerProfile.findMany({
+        where: { 
+          inviteCode: c.code,
+          referralCodeId: null // Only those not already linked
+        },
+        select: {
+          user: {
+            select: {
+              orders: {
+                select: { totalAmount: true, orderStatus: true }
+              }
+            }
+          }
+        }
+      });
+
+      // Aggregate all layers
+      const directRev = (c.orders || []).reduce((s: number, o: any) => s + (Number(o.totalAmount) || 0), 0);
+      
+      const acquisitionRev = (c.referredBuyers || []).reduce((s: number, b: any) => {
+        return s + (b.user?.orders || []).reduce((os: number, o: any) => os + (Number(o.totalAmount) || 0), 0);
+      }, 0);
+
+      const stringMatchRev = stringMatchedBuyers.reduce((s: number, b: any) => {
+        return s + (b.user?.orders || []).reduce((os: number, o: any) => os + (Number(o.totalAmount) || 0), 0);
+      }, 0);
+
+      const totalOrderCount = (c.orders || []).length + 
+                             (c.referredBuyers || []).reduce((a: number, b: any) => a + (b.user?.orders || []).length, 0) +
+                             stringMatchedBuyers.reduce((a: number, b: any) => a + (b.user?.orders || []).length, 0);
+
+      return {
+        ...c,
+        totalRevenue: directRev + acquisitionRev + stringMatchRev,
+        orderCount: totalOrderCount
+      };
     }));
+
+    return allCodes;
   }
 
   async deleteReferralCode(id: string) {

@@ -73,13 +73,16 @@ export class BuyersService {
     const state = addr?.state ?? dto.address?.['state'] ?? '';
     const pincode = addr?.pincode ?? dto.address?.['pincode'] ?? '';
 
-    // Resolve referral code if provided
+    // Resolve referral code if provided (trimmed & case-insensitive)
     let referralCodeId: string | null = null;
     if (dto.inviteCode) {
+      const cleanCode = dto.inviteCode.trim().toUpperCase();
       const ref = await (this.prisma as any).referralCode.findUnique({
-        where: { code: dto.inviteCode.toUpperCase() },
+        where: { code: cleanCode },
       });
-      if (ref) referralCodeId = ref.id;
+      if (ref) {
+        referralCodeId = ref.id;
+      }
     }
 
     const profileData = {
@@ -277,10 +280,13 @@ export class BuyersService {
     const updateData: any = { ...dto };
 
     if (dto.inviteCode) {
+      const cleanCode = dto.inviteCode.trim().toUpperCase();
       const ref = await (this.prisma as any).referralCode.findUnique({
-        where: { code: dto.inviteCode.toUpperCase() },
+        where: { code: cleanCode },
       });
-      if (ref) updateData.referralCodeId = ref.id;
+      if (ref) {
+        updateData.referralCodeId = ref.id;
+      }
     }
 
     // Extract city/state/pincode from address if provided
