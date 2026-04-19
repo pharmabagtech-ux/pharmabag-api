@@ -108,13 +108,25 @@ export class ProductsService {
       }
     }
 
-    const isFromMaster = !!normalized.masterProductId;
+    let masterProductId = normalized.masterProductId;
+    if (!masterProductId) {
+      const master = await this.prisma.masterProduct.findFirst({
+        where: {
+          name: { equals: normalized.name, mode: 'insensitive' },
+          manufacturer: { equals: normalized.manufacturer, mode: 'insensitive' },
+          deletedAt: null,
+        },
+      });
+      if (master) masterProductId = master.id;
+    }
+
+    const isFromMaster = !!masterProductId;
     
     const productData: Prisma.ProductCreateInput = {
       seller: { connect: { id: seller.id } },
       category: { connect: { id: normalized.categoryId } },
       subCategory: { connect: { id: normalized.subCategoryId } },
-      masterProduct: isFromMaster ? { connect: { id: normalized.masterProductId } } : undefined,
+      masterProduct: isFromMaster ? { connect: { id: masterProductId } } : undefined,
       name: normalized.name,
       slug: normalized.slug,
       externalId: normalized.externalId,
@@ -452,15 +464,15 @@ export class ProductsService {
   // ──────────────────────────────────────────────
 
   /**
-   * Browse all active products with filtering & pagination.
+   * Browse all master products with filtering & pagination.
+   * This is the "Marketplace" view where unique items are shown once.
    */
   async findAll(query: QueryProductDto) {
     const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc' } = query;
     const skip = (page - 1) * limit;
 
-    const where: Prisma.ProductWhereInput = {
+    const where: Prisma.MasterProductWhereInput = {
       isActive: true,
-      approvalStatus: ProductApprovalStatus.APPROVED,
       deletedAt: null,
     };
 
@@ -477,25 +489,28 @@ export class ProductsService {
       where.manufacturer = { contains: query.manufacturer, mode: 'insensitive' };
     }
 
-    const [products, total] = await Promise.all([
-      this.prisma.product.findMany({
+    const [masters, total] = await Promise.all([
+      this.prisma.masterProduct.findMany({
         where,
         include: {
           category: true,
           subCategory: true,
-          batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
-          seller: { select: { companyName: true, city: true, state: true, rating: true } },
-          images: true,
+          images: { take: 1 },
+          products: {
+            where: { isActive: true, deletedAt: null },
+            select: { mrp: true, discountType: true, discountMeta: true },
+            orderBy: { mrp: 'asc' },
+          },
         },
         orderBy: { [sortBy]: sortOrder },
         skip,
         take: limit,
       }),
-      this.prisma.product.count({ where }),
+      this.prisma.masterProduct.count({ where }),
     ]);
 
     return {
-      products: products.map((p) => this.flattenProduct(p)),
+      products: masters.map((m) => this.mapMasterToGrid(m)),
       meta: {
         total,
         page,
@@ -506,28 +521,107 @@ export class ProductsService {
   }
 
   /**
-   * Get a single product by ID. Records analytics view.
+   * Get a single Master Product with all its seller listings.
+   * This provides the data for the "Compare Sellers" view.
    */
-  async findOne(productId: string) {
-    const product = await this.prisma.product.findFirst({
-      where: { id: productId, deletedAt: null },
+  async findOne(id: string) {
+    // Try to find by Master ID or Slug first
+    let master = await this.prisma.masterProduct.findFirst({
+      where: { 
+        OR: [{ id }, { slug: id }],
+        deletedAt: null 
+      },
       include: {
         category: true,
         subCategory: true,
-        batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
-        seller: { select: { companyName: true, city: true, state: true, rating: true } },
         images: true,
+        products: {
+            where: { isActive: true, deletedAt: null },
+            include: {
+                seller: { select: { id: true, companyName: true, rating: true, city: true, state: true } },
+                batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
+                images: true,
+            },
+            orderBy: [{ mrp: 'asc' }],
+        }
       },
     });
 
-    if (!product) {
-      throw new NotFoundException('Product not found');
+    // Fallback: If 'id' is a specific Seller Product ID, find its Master
+    if (!master) {
+        const listing = await this.prisma.product.findUnique({
+            where: { id },
+            select: { masterProductId: true }
+        });
+        if (listing?.masterProductId) {
+            return this.findOne(listing.masterProductId);
+        }
+        throw new NotFoundException('Product not found');
     }
 
-    // Fire-and-forget: record analytics view
-    this.analyticsService.recordView(product.id);
+    // Fire-and-forget: record analytics view for the master item
+    this.analyticsService.recordView(master.id);
 
-    return this.flattenProduct(product);
+    return this.formatMasterDetail(master);
+  }
+
+  private mapMasterToGrid(m: any) {
+    const listings = m.products || [];
+    const minPrice = listings.length > 0 ? listings[0].mrp : m.mrp;
+    const hasSellers = listings.length > 0;
+
+    return {
+      id: m.id,
+      name: m.name,
+      slug: m.slug,
+      manufacturer: m.manufacturer,
+      chemicalComposition: m.chemicalComposition,
+      mrp: m.mrp,
+      price: minPrice,
+      hasSellers,
+      sellerCount: listings.length,
+      image: m.images?.[0]?.url || null,
+      category: m.category,
+      subCategory: m.subCategory,
+      createdAt: m.createdAt,
+    };
+  }
+
+  private formatMasterDetail(m: any) {
+    return {
+      id: m.id,
+      name: m.name,
+      slug: m.slug,
+      manufacturer: m.manufacturer,
+      chemicalComposition: m.chemicalComposition,
+      description: m.description,
+      mrp: m.mrp,
+      gstPercent: m.gstPercent,
+      images: m.images,
+      category: m.category,
+      subCategory: m.subCategory,
+      therapeuticClass: m.therapeuticClass,
+      sideEffects: m.sideEffects,
+      directionsForUse: m.directionsForUse,
+      safetyAdvice: m.safetyAdvice,
+      packSize: m.packSize,
+      storageAndHandling: m.storageAndHandling,
+      // Group seller listings
+      listings: (m.products || []).map((p: any) => {
+          const batches = p.batches || [];
+          const stock = batches.reduce((sum: number, b: any) => sum + b.stock, 0);
+          return {
+              id: p.id,
+              price: p.mrp,
+              discountType: p.discountType,
+              discountMeta: p.discountMeta,
+              stock,
+              expiryDate: batches.length > 0 ? batches[0].expiryDate : null,
+              seller: p.seller,
+              images: p.images?.length > 0 ? p.images : m.images // Fallback to master images
+          };
+      })
+    };
   }
 
   /**
