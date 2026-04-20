@@ -79,20 +79,27 @@ export class ReferralService {
         }
       });
 
-      // Aggregate all layers
-      const directRev = (c.orders || []).reduce((s: number, o: any) => s + (Number(o.totalAmount) || 0), 0);
+      // Aggregate all layers - ONLY COUNT DELIVERED ORDERS
+      const directRev = (c.orders || [])
+        .filter((o: any) => o.orderStatus === 'DELIVERED')
+        .reduce((s: number, o: any) => s + (Number(o.totalAmount) || 0), 0);
       
       const acquisitionRev = (c.referredBuyers || []).reduce((s: number, b: any) => {
-        return s + (b.user?.orders || []).reduce((os: number, o: any) => os + (Number(o.totalAmount) || 0), 0);
+        const deliveredOrders = (b.user?.orders || []).filter((o: any) => o.orderStatus === 'DELIVERED');
+        return s + deliveredOrders.reduce((os: number, o: any) => os + (Number(o.totalAmount) || 0), 0);
       }, 0);
 
       const stringMatchRev = stringMatchedBuyers.reduce((s: number, b: any) => {
-        return s + (b.user?.orders || []).reduce((os: number, o: any) => os + (Number(o.totalAmount) || 0), 0);
+        const deliveredOrders = (b.user?.orders || []).filter((o: any) => o.orderStatus === 'DELIVERED');
+        return s + deliveredOrders.reduce((os: number, o: any) => os + (Number(o.totalAmount) || 0), 0);
       }, 0);
 
-      const totalOrderCount = (c.orders || []).length + 
-                             (c.referredBuyers || []).reduce((a: number, b: any) => a + (b.user?.orders || []).length, 0) +
-                             stringMatchedBuyers.reduce((a: number, b: any) => a + (b.user?.orders || []).length, 0);
+      const totalOrderCount = 
+        (c.orders || []).filter((o: any) => o.orderStatus === 'DELIVERED').length + 
+        (c.referredBuyers || []).reduce((a: number, b: any) => 
+          a + (b.user?.orders || []).filter((o: any) => o.orderStatus === 'DELIVERED').length, 0) +
+        stringMatchedBuyers.reduce((a: number, b: any) => 
+          a + (b.user?.orders || []).filter((o: any) => o.orderStatus === 'DELIVERED').length, 0);
 
       return {
         ...c,

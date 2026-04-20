@@ -61,6 +61,7 @@ export class AdminService {
         openTickets,
         blockedUsers,
         recentOrders,
+        referralStats,
       ] = await Promise.all([
         this.prisma.user.count({ where: dateWhere }),
         this.prisma.user.count({ where: { role: 'BUYER', ...dateWhere } }),
@@ -107,6 +108,15 @@ export class AdminService {
             buyer: { select: { id: true, phone: true } },
           },
         }),
+        this.prisma.order.aggregate({
+          where: {
+            referralCodeId: { not: null },
+            orderStatus: OrderStatus.DELIVERED,
+            ...dateWhere,
+          },
+          _count: { id: true },
+          _sum: { totalAmount: true },
+        }),
       ]);
 
       return {
@@ -122,6 +132,8 @@ export class AdminService {
         pendingSettlements,
         openTickets,
         recentOrders,
+        referralCount: (referralStats as any)?._count?.id ?? 0,
+        referralRevenue: (referralStats as any)?._sum?.totalAmount ?? 0,
       };
     } catch (error) {
       this.logger.error(`Failed to fetch dashboard metrics: ${error.message}`, error.stack);
@@ -386,6 +398,12 @@ export class AdminService {
           rejectionReason: true,
           createdAt: true,
           updatedAt: true,
+          masterProduct: {
+            select: {
+              id: true,
+              _count: { select: { products: true } }
+            }
+          },
           seller: { select: { id: true, companyName: true, userId: true } },
           category: { select: { id: true, name: true } },
           subCategory: { select: { id: true, name: true } },
