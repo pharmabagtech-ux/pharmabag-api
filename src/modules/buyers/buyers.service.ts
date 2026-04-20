@@ -80,9 +80,12 @@ export class BuyersService {
       const ref = await (this.prisma as any).referralCode.findUnique({
         where: { code: cleanCode },
       });
-      if (ref) {
-        referralCodeId = ref.id;
+      
+      if (!ref) {
+        throw new BadRequestException('Invalid referral code');
       }
+      
+      referralCodeId = ref.id;
     }
 
     const profileData = {
@@ -284,9 +287,12 @@ export class BuyersService {
       const ref = await (this.prisma as any).referralCode.findUnique({
         where: { code: cleanCode },
       });
-      if (ref) {
-        updateData.referralCodeId = ref.id;
+
+      if (!ref) {
+        throw new BadRequestException('Invalid referral code');
       }
+
+      updateData.referralCodeId = ref.id;
     }
 
     // Extract city/state/pincode from address if provided
