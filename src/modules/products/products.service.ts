@@ -96,7 +96,7 @@ export class ProductsService {
 
     // Also check slug uniqueness for upsert
     if (normalized.slug) {
-      const existingBySlug = await this.prisma.product.findUnique({
+      const existingBySlug = await this.prisma.product.findFirst({
         where: { slug: normalized.slug },
       });
       if (existingBySlug) {
@@ -104,7 +104,7 @@ export class ProductsService {
           this.logger.log(`Upsert: product with slug ${normalized.slug} exists, updating`);
           return this.upsertExistingProduct(existingBySlug.id, seller.id, normalized, category, subCategory);
         }
-        throw new BadRequestException(`Product with slug "${normalized.slug}" already exists`);
+        // Allow duplicate slugs for seller-specific listings
       }
     }
 

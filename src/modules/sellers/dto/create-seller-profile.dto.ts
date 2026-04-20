@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   Matches,
+  IsEmail,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -11,6 +12,26 @@ export class CreateSellerProfileDto {
   @IsString()
   @IsNotEmpty()
   companyName: string;
+
+
+  @ApiPropertyOptional({ example: 'business@example.com' })
+  @IsEmail()
+  @IsOptional()
+  email?: string;
+
+  @ApiPropertyOptional({ example: '12345678901234' })
+  @IsString()
+  @IsOptional()
+  fssaiNumber?: string;
+
+  @ApiPropertyOptional({ example: { accountHolder: 'John Doe', accountNumber: '1234567890', bankName: 'HDFC', ifsc: 'HDFC0001234' } })
+  @IsOptional()
+  bankAccount?: any;
+
+  @ApiPropertyOptional({ example: 'https://s3.amazonaws.com/cancel-check.jpg' })
+  @IsString()
+  @IsOptional()
+  cancelCheck?: string;
 
   @ApiProperty({ example: '27AABCU9603R1ZM', description: '15-char GSTIN' })
   @IsString()

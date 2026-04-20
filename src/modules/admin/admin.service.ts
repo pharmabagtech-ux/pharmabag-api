@@ -204,7 +204,34 @@ export class AdminService {
         createdAt: true,
         updatedAt: true,
         buyerProfile: true,
-        sellerProfile: true,
+        sellerProfile: {
+          select: {
+            id: true,
+            companyName: true,
+            gstNumber: true,
+            panNumber: true,
+            address: true,
+            city: true,
+            state: true,
+            pincode: true,
+            // @ts-ignore
+            email: true,
+            // @ts-ignore
+            fssaiNumber: true,
+            // @ts-ignore
+            bankAccount: true,
+            // @ts-ignore
+            cancelCheck: true,
+            drugLicenseNumber: true,
+            drugLicenseUrl: true,
+            drugLicenseExpiry: true,
+            drugLicenseNumber2: true,
+            drugLicenseUrl2: true,
+            drugLicenseExpiry2: true,
+            verificationStatus: true,
+            updatedAt: true,
+          }
+        },
         _count: { select: { orders: true, reviews: true, tickets: true } },
       },
     });

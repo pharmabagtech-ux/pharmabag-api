@@ -285,6 +285,15 @@ export class OrdersService {
                 rating: true,
               },
             },
+            settlement: {
+              select: {
+                id: true,
+                payoutStatus: true,
+                payoutReference: true,
+                paymentProofUrl: true,
+                payoutDate: true,
+              },
+            },
           },
         },
         address: true,

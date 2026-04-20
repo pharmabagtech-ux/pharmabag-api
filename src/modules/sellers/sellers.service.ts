@@ -59,6 +59,14 @@ export class SellersService {
         city: dto.city,
         state: dto.state,
         pincode: dto.pincode,
+        // @ts-ignore
+        email: dto.email,
+        // @ts-ignore
+        fssaiNumber: dto.fssaiNumber,
+        // @ts-ignore
+        bankAccount: dto.bankAccount,
+        // @ts-ignore
+        cancelCheck: dto.cancelCheck,
         gstPanResponse,
         verificationStatus: gstPanResponse ? 'PENDING' : 'UNVERIFIED',
         rating: 0,
@@ -75,13 +83,29 @@ export class SellersService {
   async getProfile(userId: string) {
     const profile = await this.prisma.sellerProfile.findUnique({
       where: { userId },
+      include: {
+        user: {
+          select: {
+            phone: true,
+            email: true,
+            status: true,
+            createdAt: true,
+          },
+        },
+      },
     });
 
     if (!profile) {
       throw new NotFoundException('Seller profile not found');
     }
 
-    return profile;
+    return {
+      ...profile,
+      phone: profile.user?.phone,
+      email: profile.user?.email,
+      status: profile.user?.status,
+      userCreatedAt: profile.user?.createdAt,
+    };
   }
 
   /**
@@ -113,6 +137,14 @@ export class SellersService {
         ...dto,
         drugLicenseExpiry: dto.drugLicenseExpiry ? new Date(dto.drugLicenseExpiry) : undefined,
         drugLicenseExpiry2: dto.drugLicenseExpiry2 ? new Date(dto.drugLicenseExpiry2) : undefined,
+        // @ts-ignore
+        email: dto.email,
+        // @ts-ignore
+        fssaiNumber: dto.fssaiNumber,
+        // @ts-ignore
+        bankAccount: dto.bankAccount,
+        // @ts-ignore
+        cancelCheck: dto.cancelCheck,
         ...(isFirstUpdate && { verificationStatus: 'PENDING' }),
       },
     });

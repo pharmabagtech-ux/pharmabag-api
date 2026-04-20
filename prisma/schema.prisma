@@ -96,6 +96,10 @@ model SellerProfile {
   updatedAt          DateTime           @updatedAt
   creditTier         CreditTier?
   gstPanResponse     Json?
+  email              String?
+  fssaiNumber        String?
+  bankAccount        Json?
+  cancelCheck        String?
   drugLicenseNumber2 String?
   drugLicenseUrl2    String?
   drugLicenseExpiry  DateTime?
@@ -171,7 +175,7 @@ model Product {
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   deletedAt            DateTime?
-  slug                 String?               @unique
+  slug                 String?
   externalId           String?               @unique
   discountType         DiscountType?
   discountMeta         Json?
@@ -204,6 +208,7 @@ model Product {
   @@index([externalId])
   @@index([name, manufacturer])
   @@index([categoryId, subCategoryId])
+  @@index([slug])
   @@map("products")
 }
 
