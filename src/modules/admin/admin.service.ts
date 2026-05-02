@@ -1846,18 +1846,72 @@ export class AdminService {
 
     if (!user) throw new NotFoundException('User not found');
 
-    return this.prisma.$transaction(async (tx) => {
-      // If seller, clean up settlements first as they don't have cascade delete
-      if (user.sellerProfile) {
-        await tx.sellerSettlement.deleteMany({
-          where: { sellerId: user.sellerProfile.id },
-        });
-      }
+    this.logger.log(`Starting hard delete for user ${userId} (Role: ${user.role})`);
 
-      // Hard delete user, cascade will handle the rest (profiles, orders, etc.)
-      return tx.user.delete({
-        where: { id: userId },
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // 1. Handle Seller-specific blocks
+        if (user.sellerProfile) {
+          // Delete settlements where this seller is the recipient
+          await tx.sellerSettlement.deleteMany({
+            where: { sellerId: user.sellerProfile.id },
+          });
+
+          // Delete order items where this seller is involved (prevents blocking SellerProfile/Product deletion)
+          // Note: This might leave orders "empty" or with incorrect totals, but hard delete is requested.
+          await tx.orderItem.deleteMany({
+            where: { sellerId: user.sellerProfile.id },
+          });
+        }
+
+        // 2. Handle Buyer-specific blocks
+        if (user.buyerProfile) {
+          // Delete custom orders
+          await tx.customOrder.deleteMany({
+            where: { buyerId: user.buyerProfile.id },
+          });
+
+          // Disconnect referral codes (set buyerId to null)
+          await tx.referralCode.updateMany({
+            where: { buyerId: user.buyerProfile.id },
+            data: { buyerId: null },
+          });
+
+          // Handle settlements blocked by buyer's orders
+          // When User is deleted, Order is deleted (Cascade), which deletes OrderItem (Cascade).
+          // But OrderItem is referenced by SellerSettlement without cascade.
+          const buyerOrders = await tx.order.findMany({
+            where: { buyerId: userId },
+            include: { items: true },
+          });
+          const orderItemIds = buyerOrders.flatMap((o) => o.items.map((i) => i.id));
+          if (orderItemIds.length > 0) {
+            await tx.sellerSettlement.deleteMany({
+              where: { orderItemId: { in: orderItemIds } },
+            });
+          }
+        }
+
+        // 3. Handle Admin-specific blocks
+        if (user.role === 'ADMIN') {
+          await tx.notificationBroadcast.deleteMany({
+            where: { adminId: userId },
+          });
+        }
+
+        // 4. Finally, delete the user (this will cascade to profiles, orders, etc.)
+        const deleted = await tx.user.delete({
+          where: { id: userId },
+        });
+
+        this.logger.log(`User ${userId} and all related data hard-deleted successfully`);
+        return deleted;
+      }, {
+        timeout: 15000 // Increase timeout for large deletions
       });
-    });
+    } catch (error) {
+      this.logger.error(`Failed to delete user ${userId}: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 }
