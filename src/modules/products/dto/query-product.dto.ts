@@ -4,6 +4,7 @@ import {
   IsInt,
   Min,
   Max,
+  IsBoolean,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -41,13 +42,33 @@ export class QueryProductDto {
   @IsOptional()
   limit?: number = 20;
 
-  @ApiPropertyOptional({ example: 'createdAt', default: 'createdAt' })
+  @ApiPropertyOptional({ example: 'name', default: 'name' })
   @IsString()
   @IsOptional()
-  sortBy?: string = 'createdAt';
+  sortBy?: string = 'name';
 
-  @ApiPropertyOptional({ example: 'desc', default: 'desc', enum: ['asc', 'desc'] })
+  @ApiPropertyOptional({ example: 'asc', default: 'asc', enum: ['asc', 'desc'] })
   @IsString()
   @IsOptional()
-  sortOrder?: 'asc' | 'desc' = 'desc';
+  sortOrder?: 'asc' | 'desc' = 'asc';
+
+  @ApiPropertyOptional({ example: true })
+  @IsBoolean()
+  @IsOptional()
+  isNew?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsBoolean()
+  @IsOptional()
+  isDiscounted?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsBoolean()
+  @IsOptional()
+  isBestSelling?: boolean;
+
+  @ApiPropertyOptional({ example: 'APPROVED' })
+  @IsString()
+  @IsOptional()
+  status?: string;
 }

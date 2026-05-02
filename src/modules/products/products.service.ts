@@ -182,6 +182,14 @@ export class ProductsService {
       `Product created: ${product.id} by seller ${seller.id}`,
     );
 
+    // Touch the master product to reflect new listing activity
+    if (product.masterProductId) {
+      await this.prisma.masterProduct.update({
+        where: { id: product.masterProductId },
+        data: { updatedAt: new Date() },
+      }).catch(err => this.logger.warn(`Failed to touch MasterProduct ${product.masterProductId}: ${err.message}`));
+    }
+
     const batch = await this.prisma.productBatch.findFirst({
       where: { productId: product.id, batchNumber: 'DEFAULT' },
     });
@@ -259,6 +267,14 @@ export class ProductsService {
     const images = await this.prisma.productImage.findMany({ where: { productId } });
 
     this.logger.log(`Product upserted: ${productId}`);
+
+    // Touch the master product to reflect new listing activity
+    if (updated.masterProductId) {
+      await this.prisma.masterProduct.update({
+        where: { id: updated.masterProductId },
+        data: { updatedAt: new Date() },
+      }).catch(err => this.logger.warn(`Failed to touch MasterProduct ${updated.masterProductId}: ${err.message}`));
+    }
 
     return {
       ...updated,
@@ -338,8 +354,27 @@ export class ProductsService {
       ];
     }
 
-    if ((query as any).status) {
-      where.approvalStatus = (query as any).status.toUpperCase();
+    if (query.status) {
+      where.approvalStatus = query.status.toUpperCase() as ProductApprovalStatus;
+    }
+
+    // New Items (Created in last 30 days)
+    if (query.isNew) {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      where.createdAt = { gte: thirtyDaysAgo };
+    }
+
+    // Discounted Items
+    if (query.isDiscounted) {
+      where.discountType = { not: null };
+    }
+
+    // Best Selling Items
+    if (query.isBestSelling) {
+      where.analytics = {
+        orders: { gt: 0 },
+      };
     }
 
     const [products, total] = await Promise.all([
@@ -471,22 +506,86 @@ export class ProductsService {
     const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc' } = query;
     const skip = (page - 1) * limit;
 
+    // Handle sortBy mapping
+    const effectiveSortBy = sortBy === 'price' ? 'mrp' : (sortBy === 'newest' ? 'updatedAt' : sortBy);
+
     const where: Prisma.MasterProductWhereInput = {
       isActive: true,
       deletedAt: null,
     };
 
-    if (query.search) {
-      where.OR = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { manufacturer: { contains: query.search, mode: 'insensitive' } },
-        { chemicalComposition: { contains: query.search, mode: 'insensitive' } },
-      ];
+    const andConditions: Prisma.MasterProductWhereInput[] = [];
+
+    // When sorting by newest, only show products that actually have seller listings
+    if (sortBy === 'newest') {
+      andConditions.push({
+        products: {
+          some: {
+            isActive: true,
+            deletedAt: null,
+          },
+        },
+      });
     }
-    if (query.categoryId) where.categoryId = query.categoryId;
-    if (query.subCategoryId) where.subCategoryId = query.subCategoryId;
+
+    if (query.search) {
+      andConditions.push({
+        OR: [
+          { name: { contains: query.search, mode: 'insensitive' } },
+          { manufacturer: { contains: query.search, mode: 'insensitive' } },
+          { chemicalComposition: { contains: query.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    if (query.categoryId) andConditions.push({ categoryId: query.categoryId });
+    if (query.subCategoryId) andConditions.push({ subCategoryId: query.subCategoryId });
     if (query.manufacturer) {
-      where.manufacturer = { contains: query.manufacturer, mode: 'insensitive' };
+      andConditions.push({
+        manufacturer: { contains: query.manufacturer, mode: 'insensitive' },
+      });
+    }
+
+    // New Items (Only those having a new seller listing in last 30 days)
+    if (query.isNew) {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      andConditions.push({
+        products: {
+          some: {
+            isActive: true,
+            deletedAt: null,
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        },
+      });
+    }
+
+    // Combine filters that target the underlying seller products
+    const productConditions: Prisma.ProductWhereInput[] = [
+      { isActive: true, deletedAt: null }
+    ];
+
+    if (query.isDiscounted) {
+      productConditions.push({ discountType: { not: null } });
+    }
+
+    if (query.isBestSelling) {
+      productConditions.push({ analytics: { orders: { gt: 0 } } });
+    }
+
+    if (productConditions.length > 1) {
+      andConditions.push({
+        products: {
+          some: {
+            AND: productConditions,
+          },
+        },
+      });
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
     }
 
     const [masters, total] = await Promise.all([
@@ -502,7 +601,7 @@ export class ProductsService {
             orderBy: { mrp: 'asc' },
           },
         },
-        orderBy: { [sortBy]: sortOrder },
+        orderBy: { [effectiveSortBy]: sortOrder },
         skip,
         take: limit,
       }),
