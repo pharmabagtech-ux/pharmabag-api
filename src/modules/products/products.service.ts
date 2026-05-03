@@ -516,18 +516,6 @@ export class ProductsService {
 
     const andConditions: Prisma.MasterProductWhereInput[] = [];
 
-    // When sorting by newest, only show products that actually have seller listings
-    if (sortBy === 'newest') {
-      andConditions.push({
-        products: {
-          some: {
-            isActive: true,
-            deletedAt: null,
-          },
-        },
-      });
-    }
-
     if (query.search) {
       andConditions.push({
         OR: [
@@ -624,8 +612,25 @@ export class ProductsService {
    * This provides the data for the "Compare Sellers" view.
    */
   async findOne(id: string) {
-    // Try to find by Master ID or Slug first
-    let master = await this.prisma.masterProduct.findFirst({
+    // 1. First, check if 'id' is a specific Seller Listing (Product)
+    const listing = await this.prisma.product.findFirst({
+        where: { id, deletedAt: null },
+        include: {
+            category: true,
+            subCategory: true,
+            batches: true,
+            images: true,
+            seller: { select: { id: true, companyName: true, rating: true, city: true, state: true } },
+        }
+    });
+
+    if (listing) {
+        this.logger.log(`findOne: Found specific listing ${id}`);
+        return this.flattenProduct(listing as any);
+    }
+
+    // 2. Fallback: Check if 'id' is a Master Product (by ID or Slug)
+    const master = await this.prisma.masterProduct.findFirst({
       where: { 
         OR: [{ id }, { slug: id }],
         deletedAt: null 
@@ -646,19 +651,11 @@ export class ProductsService {
       },
     });
 
-    // Fallback: If 'id' is a specific Seller Product ID, find its Master
     if (!master) {
-        const listing = await this.prisma.product.findUnique({
-            where: { id },
-            select: { masterProductId: true }
-        });
-        if (listing?.masterProductId) {
-            return this.findOne(listing.masterProductId);
-        }
         throw new NotFoundException('Product not found');
     }
 
-    // Fire-and-forget: record analytics view for the master item
+    // record analytics view for the master item
     this.analyticsService.recordView(master.id);
 
     return this.formatMasterDetail(master);
@@ -683,6 +680,7 @@ export class ProductsService {
       category: m.category,
       subCategory: m.subCategory,
       createdAt: m.createdAt,
+      updatedAt: m.updatedAt,
     };
   }
 
@@ -872,7 +870,7 @@ export class ProductsService {
   /**
    * Flatten batches into top-level stock/expiryDate for Phase-1 compatibility.
    */
-  private flattenProduct(product: Record<string, unknown>) {
+  private flattenProduct(product: Record<string, any>) {
     const batches = (product.batches ?? []) as Array<{
       stock: number;
       expiryDate: Date;
@@ -881,9 +879,22 @@ export class ProductsService {
     const totalStock = batches.reduce((sum, b) => sum + b.stock, 0);
     const nearestExpiry = batches.length > 0 ? batches[0].expiryDate : null;
 
-    const { batches: _batches, ...rest } = product;
+    // Standardize images as string array
+    const images = (product.images ?? []).map((img: any) => 
+      typeof img === 'string' ? img : (img.url ?? img)
+    );
+
+    // Standardize category name
+    let categoryName = product.category;
+    if (product.category && typeof product.category === 'object') {
+      categoryName = product.category.name || product.category.id;
+    }
+
+    const { batches: _batches, images: _images, category: _category, ...rest } = product;
     return {
       ...rest,
+      category: categoryName,
+      images,
       stock: totalStock,
       expiryDate: nearestExpiry,
     };
