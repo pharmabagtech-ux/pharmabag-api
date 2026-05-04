@@ -585,7 +585,7 @@ export class ProductsService {
           images: { take: 1 },
           products: {
             where: { isActive: true, deletedAt: null },
-            select: { mrp: true, discountType: true, discountMeta: true },
+            select: { mrp: true, discountType: true, discountMeta: true, minimumOrderQuantity: true },
             orderBy: { mrp: 'asc' },
           },
         },
@@ -664,6 +664,8 @@ export class ProductsService {
   private mapMasterToGrid(m: any) {
     const listings = m.products || [];
     const minPrice = listings.length > 0 ? listings[0].mrp : m.mrp;
+    const minMoq = listings.length > 0 ? (listings[0].minimumOrderQuantity || 1) : 1;
+    const bestListingId = listings.length > 0 ? listings[0].id : null;
     const hasSellers = listings.length > 0;
 
     return {
@@ -674,6 +676,8 @@ export class ProductsService {
       chemicalComposition: m.chemicalComposition,
       mrp: m.mrp,
       price: minPrice,
+      moq: minMoq,
+      bestListingId,
       hasSellers,
       sellerCount: listings.length,
       image: m.images?.[0]?.url || null,
@@ -715,7 +719,8 @@ export class ProductsService {
               stock,
               expiryDate: batches.length > 0 ? batches[0].expiryDate : null,
               seller: p.seller,
-              images: p.images?.length > 0 ? p.images : m.images // Fallback to master images
+              images: p.images?.length > 0 ? p.images : m.images, // Fallback to master images
+              moq: p.minimumOrderQuantity || 1,
           };
       })
     };
