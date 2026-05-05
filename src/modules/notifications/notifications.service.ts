@@ -89,6 +89,28 @@ export class NotificationsService {
   }
 
   /**
+   * Notify user when their account/KYC is verified.
+   */
+  async notifyUserVerified(userId: string, role: string) {
+    const roleName = role.toLowerCase();
+    return this.createNotification(
+      userId,
+      `Congratulations! Your ${roleName} profile has been verified. You can now access all features.`,
+    );
+  }
+
+  /**
+   * Notify user when their account/KYC is rejected.
+   */
+  async notifyUserRejected(userId: string, role: string, reason?: string) {
+    const roleName = role.toLowerCase();
+    return this.createNotification(
+      userId,
+      `Your ${roleName} profile verification was not successful.${reason ? ` Reason: ${reason}` : ' Please review your documents and resubmit.'}`,
+    );
+  }
+
+  /**
    * Get all notifications for a user.
    */
   async getUserNotifications(userId: string) {

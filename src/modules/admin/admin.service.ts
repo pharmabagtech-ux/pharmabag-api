@@ -27,12 +27,18 @@ import { AdminQueryTicketsDto } from './dto/query-tickets.dto';
 import { AdminUpdateOrderStatusDto } from './dto/admin-update-order-status.dto';
 import { AdminUpdateTicketStatusDto } from './dto/admin-update-ticket-status.dto';
 import { AdminReplyTicketDto } from './dto/admin-reply-ticket.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+
 
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
+
 
   // ════════════════════════════════════════════════════════
   // DASHBOARD
@@ -304,6 +310,7 @@ export class AdminService {
     }
 
     this.logger.log(`User ${userId} approved by admin`);
+    await this.notificationsService.notifyUserVerified(userId, user.role);
     return updatedUser;
   }
 
@@ -345,6 +352,7 @@ export class AdminService {
     }
 
     this.logger.log(`User ${userId} rejected by admin`);
+    await this.notificationsService.notifyUserRejected(userId, user.role);
     return updatedUser;
   }
 
@@ -1510,6 +1518,12 @@ export class AdminService {
       `Buyer ${buyerId} ${dto.verified ? 'approved' : 'rejected'} — creditTier: ${dto.creditTier ?? 'none'}`,
     );
 
+    if (dto.verified) {
+      await this.notificationsService.notifyUserVerified(buyer.userId, 'BUYER');
+    } else {
+      await this.notificationsService.notifyUserRejected(buyer.userId, 'BUYER');
+    }
+
     return profile;
   }
 
@@ -1525,13 +1539,22 @@ export class AdminService {
       throw new NotFoundException('Seller profile not found');
     }
 
-    return this.prisma.sellerProfile.update({
+    const updated = await this.prisma.sellerProfile.update({
       where: { id: sellerId },
       data: {
         verificationStatus: dto.verified ? 'VERIFIED' : 'REJECTED',
         creditTier: dto.verified ? (dto.creditTier ?? null) : null,
       },
     });
+
+    if (dto.verified) {
+      await this.notificationsService.notifyUserVerified(seller.userId, 'SELLER');
+    } else {
+      await this.notificationsService.notifyUserRejected(seller.userId, 'SELLER');
+    }
+
+    return updated;
+
   }
 
   // ═══════════════════════════════════════════════════
