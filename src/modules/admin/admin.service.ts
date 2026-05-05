@@ -62,6 +62,7 @@ export class AdminService {
         blockedUsers,
         recentOrders,
         referralStats,
+        pendingProductRequests,
       ] = await Promise.all([
         this.prisma.user.count({ where: dateWhere }),
         this.prisma.user.count({ where: { role: 'BUYER', ...dateWhere } }),
@@ -117,6 +118,9 @@ export class AdminService {
           _count: { id: true },
           _sum: { totalAmount: true },
         }),
+        (this.prisma as any).productRequest.count({
+          where: { status: 'PENDING', ...dateWhere },
+        }),
       ]);
 
       return {
@@ -134,6 +138,7 @@ export class AdminService {
         recentOrders,
         referralCount: (referralStats as any)?._count?.id ?? 0,
         referralRevenue: (referralStats as any)?._sum?.totalAmount ?? 0,
+        pendingProductRequests,
       };
     } catch (error) {
       this.logger.error(`Failed to fetch dashboard metrics: ${error.message}`, error.stack);
@@ -641,7 +646,27 @@ export class AdminService {
             id: true,
             phone: true,
             email: true,
-            buyerProfile: { select: { legalName: true, city: true, state: true } },
+            buyerProfile: {
+              select: {
+                legalName: true,
+                gstNumber: true,
+                panNumber: true,
+                drugLicenseNumber: true,
+                drugLicenseNumber2: true,
+                drugLicenseExpiry: true,
+                drugLicenseExpiry2: true,
+                address: true,
+                city: true,
+                state: true,
+                pincode: true,
+                drugLicenseUrl: true,
+                drugLicenseUrl2: true,
+                cancelCheck: true,
+                document: true,
+              }
+            },
+
+
           },
         },
         items: {

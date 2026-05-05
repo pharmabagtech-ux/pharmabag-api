@@ -78,7 +78,7 @@ import { CustomOrdersModule } from './modules/custom-orders/custom-orders.module
 
     // ─── Rate limiting ───────────────────────────────
     ThrottlerModule.forRoot({
-      throttlers: [{ ttl: 60000, limit: 20 }],
+      throttlers: [{ ttl: 60000, limit: 100 }],
     }),
 
     // Infrastructure
@@ -113,4 +113,4 @@ import { CustomOrdersModule } from './modules/custom-orders/custom-orders.module
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
-export class AppModule {}
+export class AppModule { }

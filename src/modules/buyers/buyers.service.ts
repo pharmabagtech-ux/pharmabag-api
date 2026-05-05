@@ -169,6 +169,7 @@ export class BuyersService {
     let userId: string;
 
     if (existingUser) {
+
       // User exists but no buyer profile — reuse
       userId = existingUser.id;
     } else {
@@ -185,6 +186,22 @@ export class BuyersService {
       });
       userId = newUser.id;
     }
+
+    // Resolve referral code if provided (trimmed & case-insensitive)
+    let referralCodeId: string | null = null;
+    if (dto.inviteCode) {
+      const cleanCode = dto.inviteCode.trim().toUpperCase();
+      const ref = await (this.prisma as any).referralCode.findUnique({
+        where: { code: cleanCode },
+      });
+
+      if (!ref) {
+        throw new BadRequestException('Invalid referral code');
+      }
+
+      referralCodeId = ref.id;
+    }
+
 
     const profile = await this.prisma.buyerProfile.create({
       data: {
@@ -210,10 +227,12 @@ export class BuyersService {
         cancelCheck: dto.cancelCheck ?? null,
         document: dto.document ?? null,
         inviteCode: dto.inviteCode ?? null,
+        referralCodeId,
         verificationStatus: 'PENDING',
         creditTier: null,
       },
     });
+
 
     // Set user status to PENDING
     await this.prisma.user.update({

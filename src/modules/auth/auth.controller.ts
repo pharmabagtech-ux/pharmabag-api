@@ -68,6 +68,7 @@ export class AuthController {
   }
 
   @Get('me')
+  @Throttle({ default: { limit: 120, ttl: 60000 } })
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Get current authenticated user profile' })

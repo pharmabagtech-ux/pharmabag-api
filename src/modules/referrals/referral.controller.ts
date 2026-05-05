@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Delete, Patch, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -22,10 +23,11 @@ export class ReferralController {
 
   @Get()
   @ApiOperation({ summary: 'List all referral codes' })
-  async list() {
-    const data = await this.referralService.getAllReferralCodes();
+  async list(@Query() query: { dateFrom?: string; dateTo?: string }) {
+    const data = await this.referralService.getAllReferralCodes(query);
     return { data };
   }
+
 
   @Patch(':id/active')
   @ApiOperation({ summary: 'Toggle referral code active status' })

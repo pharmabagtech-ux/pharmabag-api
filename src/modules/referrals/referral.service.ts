@@ -30,7 +30,16 @@ export class ReferralService {
     });
   }
 
-  async getAllReferralCodes() {
+  async getAllReferralCodes(query: { dateFrom?: string; dateTo?: string } = {}) {
+    const { dateFrom, dateTo } = query;
+
+    const dateWhere = (dateFrom || dateTo) ? {
+      createdAt: {
+        ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+        ...(dateTo ? { lte: new Date(dateTo) } : {}),
+      }
+    } : {};
+
     const codes = await (this.prisma as any).referralCode.findMany({
       include: {
         buyer: {
@@ -42,16 +51,20 @@ export class ReferralService {
         },
         // Layer 1: Directly tagged orders
         orders: {
-          select: { id: true, totalAmount: true, orderStatus: true }
+          where: { ...dateWhere },
+          select: { id: true, totalAmount: true, orderStatus: true, createdAt: true }
         },
-        // Layer 2 & 3: Buyers linked by ID OR by String match
+        // Layer 2: Buyers linked by ID
         referredBuyers: {
           select: {
             user: {
               select: {
                 orders: {
-                  where: { referralCodeId: null },
-                  select: { totalAmount: true, orderStatus: true }
+                  where: { 
+                    referralCodeId: null,
+                    ...dateWhere 
+                  },
+                  select: { totalAmount: true, orderStatus: true, createdAt: true }
                 }
               }
             }
@@ -72,7 +85,8 @@ export class ReferralService {
           user: {
             select: {
               orders: {
-                select: { totalAmount: true, orderStatus: true }
+                where: { ...dateWhere },
+                select: { totalAmount: true, orderStatus: true, createdAt: true }
               }
             }
           }
@@ -110,6 +124,7 @@ export class ReferralService {
 
     return allCodes;
   }
+
 
   async deleteReferralCode(id: string) {
     return (this.prisma as any).referralCode.delete({ where: { id } });

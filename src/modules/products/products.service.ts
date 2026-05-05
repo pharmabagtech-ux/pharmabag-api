@@ -13,6 +13,7 @@ import { AnalyticsService } from './services/analytics.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { QueryProductDto } from './dto/query-product.dto';
+import { CreateProductRequestDto } from './dto/create-product-request.dto';
 import { BulkCreateProductDto } from './dto/bulk-create-product.dto';
 
 @Injectable()
@@ -903,5 +904,122 @@ export class ProductsService {
       stock: totalStock,
       expiryDate: nearestExpiry,
     };
+  }
+
+  // ──────────────────────────────────────────────
+  // PRODUCT REQUESTS
+  // ──────────────────────────────────────────────
+
+  async createRequest(userId: string, dto: CreateProductRequestDto) {
+    const request = await (this.prisma as any).productRequest.create({
+      data: {
+        userId,
+        productName: dto.productName.trim(),
+        manufacturer: dto.manufacturer?.trim(),
+        description: dto.description?.trim(),
+        status: 'PENDING',
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            phone: true,
+            sellerProfile: {
+              select: { companyName: true },
+            },
+          },
+        },
+      },
+    });
+
+    this.logger.log(`Product request created: ${request.id} by user ${userId}`);
+    return request;
+  }
+
+  async findAllRequests(query: { page?: number | string; limit?: number | string; status?: string; userId?: string; search?: string; dateFrom?: string; dateTo?: string } = {}) {
+
+    const page = Number(query.page || 1);
+    const limit = Number(query.limit || 20);
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (query.status) {
+      where.status = query.status.toUpperCase();
+    }
+    if (query.userId) {
+      where.userId = query.userId;
+    }
+    if (query.search) {
+      where.OR = [
+        { productName: { contains: query.search, mode: 'insensitive' } },
+        { manufacturer: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    if (query.dateFrom || query.dateTo) {
+      where.createdAt = {
+        ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+        ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+      };
+    }
+
+
+    if (query.dateFrom || query.dateTo) {
+      where.createdAt = {
+        ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+        ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+      };
+    }
+
+
+
+    const [requests, total] = await Promise.all([
+      (this.prisma as any).productRequest.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              phone: true,
+              sellerProfile: {
+                select: { companyName: true },
+              },
+              buyerProfile: {
+                select: { legalName: true },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      (this.prisma as any).productRequest.count({ where }),
+    ]);
+
+    return {
+      requests,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async updateRequestStatus(requestId: string, status: any) {
+    const request = await (this.prisma as any).productRequest.findUnique({
+      where: { id: requestId },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Product request not found');
+    }
+
+    return (this.prisma as any).productRequest.update({
+      where: { id: requestId },
+      data: { status },
+    });
   }
 }

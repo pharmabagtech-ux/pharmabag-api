@@ -22,12 +22,76 @@ import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { QueryProductDto } from './dto/query-product.dto';
+import { CreateProductRequestDto } from './dto/create-product-request.dto';
 import { BulkCreateProductDto } from './dto/bulk-create-product.dto';
 
 @ApiTags('Products')
 @Controller('products')
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
+
+  // ──────────────────────────────────────────────
+  // PRODUCT REQUESTS (Must be above :id to avoid collisions)
+  // ──────────────────────────────────────────────
+
+  @Post('requests')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SELLER, Role.BUYER)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Request a new product to be added to the platform' })
+  @ApiResponse({ status: 201, description: 'Request created' })
+  async createRequest(
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateProductRequestDto,
+  ) {
+    const data = await this.productsService.createRequest(userId, dto);
+    return { message: 'Product request submitted successfully', data };
+  }
+
+  @Get('my-requests')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SELLER, Role.BUYER)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'List own product requests' })
+  @ApiResponse({ status: 200, description: 'Own product requests list' })
+  async findMyRequests(
+    @CurrentUser('id') userId: string,
+    @Query() query: { page?: number; limit?: number; status?: string; search?: string; dateFrom?: string; dateTo?: string },
+  ) {
+    const data = await this.productsService.findAllRequests({ ...query, userId });
+    return { message: 'Your product requests retrieved successfully', data };
+  }
+
+  @Get('requests')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'List all product requests (Admin only)' })
+  @ApiResponse({ status: 200, description: 'Product requests list' })
+  async findAllRequests(@Query() query: { page?: number; limit?: number; status?: string; search?: string; dateFrom?: string; dateTo?: string }) {
+    const data = await this.productsService.findAllRequests(query);
+    return { message: 'Product requests retrieved successfully', data };
+  }
+
+
+
+  @Patch('requests/:id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Update product request status (Admin only)' })
+  @ApiResponse({ status: 200, description: 'Request status updated' })
+  async updateRequestStatus(
+    @Param('id') id: string,
+    @Body('status') status: any,
+  ) {
+    const data = await this.productsService.updateRequestStatus(id, status);
+    return { message: 'Product request status updated successfully', data };
+  }
 
   // ──────────────────────────────────────────────
   // PUBLIC ENDPOINTS (No auth required)
