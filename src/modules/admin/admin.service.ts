@@ -1582,11 +1582,7 @@ export class AdminService {
     const [data, total] = await Promise.all([
       this.prisma.masterProduct.findMany({
         where,
-        include: {
-          category: { select: { id: true, name: true } },
-          subCategory: { select: { id: true, name: true } },
-          images: { select: { id: true, url: true }, take: 1 },
-        },
+        include: { category: { select: { id: true, name: true } }, subCategory: { select: { id: true, name: true } }, images: { select: { id: true, url: true }, take: 1 }, company: { select: { id: true, name: true } }, chemicalCompositionRef: { select: { id: true, name: true } } },
         orderBy: { name: 'asc' },
         skip,
         take: limit,
@@ -1600,11 +1596,7 @@ export class AdminService {
   async getSuggestionById(id: string) {
     const suggestion = await this.prisma.masterProduct.findUnique({
       where: { id },
-      include: {
-        category: { select: { id: true, name: true } },
-        subCategory: { select: { id: true, name: true } },
-        images: { select: { id: true, url: true } },
-        products: {
+      include: { category: { select: { id: true, name: true } }, subCategory: { select: { id: true, name: true } }, images: { select: { id: true, url: true } }, company: { select: { id: true, name: true } }, chemicalCompositionRef: { select: { id: true, name: true } }, products: {
           select: { id: true, seller: { select: { companyName: true } }, mrp: true },
           take: 10,
         },

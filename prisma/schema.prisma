@@ -605,15 +605,40 @@ model MigrationIdMap {
   @@map("migration_id_map")
 }
 
+model Company {
+  id             String          @id @default(uuid())
+  name           String          @unique
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  masterProducts MasterProduct[]
+
+  @@map("companies")
+}
+
+model ChemicalComposition {
+  id             String          @id @default(uuid())
+  name           String          @unique
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  masterProducts MasterProduct[]
+
+  @@map("chemical_compositions")
+}
+
 model MasterProduct {
-  id                  String               @id @default(uuid())
-  name                String
-  slug                String?              @unique
-  externalId          String?              @unique
-  manufacturer        String
-  chemicalComposition String
-  description         String?
-  mrp                 Float?
+  id                    String               @id @default(uuid())
+  sku                   String?              @unique
+  name                  String
+  slug                  String?              @unique
+  externalId            String?              @unique
+  manufacturer          String?
+  chemicalComposition   String?
+  companyId             String?
+  company               Company?             @relation(fields: [companyId], references: [id])
+  chemicalCompositionId String?
+  chemicalCompositionRef ChemicalComposition? @relation(fields: [chemicalCompositionId], references: [id])
+  description           String?
+  mrp                   Float?
   gstPercent          Float?
   categoryId          String
   subCategoryId       String
@@ -634,6 +659,7 @@ model MasterProduct {
   customOrders        CustomOrder[]
 
   @@index([name])
+  @@index([sku])
   @@index([manufacturer])
   @@index([externalId])
   @@index([isActive])
