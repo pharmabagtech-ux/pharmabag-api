@@ -16,6 +16,11 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { DiscountType } from '@prisma/client';
 
 export class UpdateProductDto {
+  @ApiPropertyOptional({ example: 'SKU-123' })
+  @IsString()
+  @IsOptional()
+  sku?: string;
+
   @ApiPropertyOptional({ example: 'Paracetamol 500mg', maxLength: 255 })
   @IsString()
   @IsOptional()

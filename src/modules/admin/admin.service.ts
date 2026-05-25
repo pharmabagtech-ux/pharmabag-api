@@ -430,9 +430,12 @@ export class AdminService {
         select: {
           id: true,
           name: true,
+          chemicalComposition: true,
           manufacturer: true,
           mrp: true,
           gstPercent: true,
+          minimumOrderQuantity: true,
+          maximumOrderQuantity: true,
           isActive: true,
           approvalStatus: true,
           rejectionReason: true,

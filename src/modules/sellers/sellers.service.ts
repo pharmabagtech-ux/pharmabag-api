@@ -102,7 +102,7 @@ export class SellersService {
     return {
       ...profile,
       phone: profile.user?.phone,
-      email: profile.user?.email,
+      email: profile.email || profile.user?.email,
       status: profile.user?.status,
       userCreatedAt: profile.user?.createdAt,
     };

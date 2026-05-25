@@ -37,150 +37,218 @@ export class MasterProductsBulkService {
     let failCount = 0;
     const errors: string[] = [];
 
+    const skusToDelete: string[] = [];
+    const newOrUpdateRows: any[] = [];
+
     for (const [index, row] of rows.entries()) {
-      try {
-        const rowNum = index + 2; // Assuming row 1 is header
-        const sku = row['SKU']?.trim();
-        
-        if (!sku) {
-          throw new Error('SKU is missing');
-        }
-
-        if (operation === 'DELETE') {
-          const action = row['Action']?.trim() || row['action']?.trim();
-          if (action?.toLowerCase() === 'delete') {
-            await this.prisma.masterProduct.delete({
-              where: { sku },
-            });
-            successCount++;
-          }
-          continue;
-        }
-
-        // For NEW and UPDATE, we need to normalize relations
-        const productName = row['Product name']?.trim();
-        const companyName = row['Company']?.trim();
-        const mainCategoryName = row['Main Category']?.trim();
-        const subCategoryName = row['Sub Category']?.trim();
-        const chemCompName = row['Chemical Composition']?.trim();
-        const description = row['Description']?.trim();
-        const image = row['Image']?.trim();
-
-        if (!productName || !mainCategoryName || !subCategoryName) {
-          throw new Error('Product name, Main Category, and Sub Category are required');
-        }
-
-        // 1. Ensure Company exists
-        let companyId: string | null = null;
-        if (companyName) {
-          const company = await this.prisma.company.upsert({
-            where: { name: companyName },
-            update: {},
-            create: { name: companyName },
-          });
-          companyId = company.id;
-        }
-
-        // 2. Ensure Chemical Composition exists
-        let chemCompId: string | null = null;
-        if (chemCompName) {
-          const chemComp = await this.prisma.chemicalComposition.upsert({
-            where: { name: chemCompName },
-            update: {},
-            create: { name: chemCompName },
-          });
-          chemCompId = chemComp.id;
-        }
-
-        // 3. Ensure Category exists
-        const category = await this.prisma.category.upsert({
-          where: { name: mainCategoryName },
-          update: {},
-          create: { 
-            name: mainCategoryName, 
-            slug: this.slugify(mainCategoryName) 
-          },
-        });
-
-        // 4. Ensure SubCategory exists
-        const subCategorySlug = this.slugify(subCategoryName);
-        let subCategory = await this.prisma.subCategory.findFirst({
-          where: { name: subCategoryName, categoryId: category.id },
-        });
-
-        if (!subCategory) {
-          // It's possible slug is not unique globally, but unique per category.
-          // Prisma schema: @@unique([slug, categoryId])
-          subCategory = await this.prisma.subCategory.create({
-            data: {
-              name: subCategoryName,
-              slug: subCategorySlug,
-              categoryId: category.id,
-            },
-          });
-        }
-
-        // 5. Create or Update MasterProduct
-        const productData = {
-          name: productName,
-          description: description || null,
-          categoryId: category.id,
-          subCategoryId: subCategory.id,
-          companyId: companyId,
-          chemicalCompositionId: chemCompId,
-        };
-
-        let masterProduct;
-        if (operation === 'NEW') {
-          masterProduct = await this.prisma.masterProduct.create({
-            data: {
-              ...productData,
-              sku: sku,
-            },
-          });
-        } else if (operation === 'UPDATE') {
-          masterProduct = await this.prisma.masterProduct.upsert({
-            where: { sku: sku },
-            update: productData,
-            create: {
-              ...productData,
-              sku: sku,
-            },
-          });
-        }
-
-        // 6. Handle Image
-        if (image) {
-          // Check if image already exists for this master product
-          const existingImage = await this.prisma.masterProductImage.findFirst({
-            where: {
-              masterProductId: masterProduct.id,
-              url: image,
-            },
-          });
-
-          if (!existingImage) {
-            await this.prisma.masterProductImage.create({
-              data: {
-                masterProductId: masterProduct.id,
-                url: image,
-              },
-            });
-          }
-        }
-
-        successCount++;
-      } catch (err) {
+      const sku = row['SKU']?.trim();
+      if (!sku) {
         failCount++;
-        errors.push(`Row ${index + 2}: ${err.message}`);
+        errors.push(`Row ${index + 2}: SKU is missing`);
+        continue;
+      }
+
+      if (operation === 'DELETE') {
+        skusToDelete.push(sku);
+      } else {
+        newOrUpdateRows.push({ ...row, originalIndex: index });
       }
     }
 
-    return {
-      successCount,
-      failCount,
-      errors,
-    };
+    if (operation === 'DELETE' && skusToDelete.length > 0) {
+      const result = await this.prisma.masterProduct.deleteMany({
+        where: { sku: { in: skusToDelete } }
+      });
+      successCount += result.count;
+      failCount += (skusToDelete.length - result.count);
+      return { successCount, failCount, errors };
+    }
+
+    if (newOrUpdateRows.length === 0) return { successCount, failCount, errors };
+
+    // 1. Collect unique names
+    const companyNames = new Set<string>();
+    const chemCompNames = new Set<string>();
+    const categoryNames = new Set<string>();
+    const subCategoryData = new Map<string, {name: string, categoryName: string}>();
+
+    for (const row of newOrUpdateRows) {
+      if (row['Company']) companyNames.add(row['Company'].trim());
+      if (row['Chemical Composition']) chemCompNames.add(row['Chemical Composition'].trim());
+      if (row['Main Category']) categoryNames.add(row['Main Category'].trim());
+      if (row['Sub Category'] && row['Main Category']) {
+        subCategoryData.set(row['Sub Category'].trim(), {
+           name: row['Sub Category'].trim(), 
+           categoryName: row['Main Category'].trim()
+        });
+      }
+    }
+
+    // 2. Bulk Insert Companies
+    if (companyNames.size > 0) {
+      await this.prisma.company.createMany({
+        data: Array.from(companyNames).map(name => ({ name })),
+        skipDuplicates: true,
+      });
+    }
+    const allCompanies = await this.prisma.company.findMany({ where: { name: { in: Array.from(companyNames) } } });
+    const companyMap = new Map(allCompanies.map(c => [c.name, c.id]));
+
+    // 3. Bulk Insert ChemComps
+    if (chemCompNames.size > 0) {
+      await this.prisma.chemicalComposition.createMany({
+        data: Array.from(chemCompNames).map(name => ({ name })),
+        skipDuplicates: true,
+      });
+    }
+    const allChems = await this.prisma.chemicalComposition.findMany({ where: { name: { in: Array.from(chemCompNames) } } });
+    const chemMap = new Map(allChems.map(c => [c.name, c.id]));
+
+    // 4. Bulk Insert Categories
+    if (categoryNames.size > 0) {
+      await this.prisma.category.createMany({
+        data: Array.from(categoryNames).map(name => ({ name, slug: this.slugify(name) })),
+        skipDuplicates: true,
+      });
+    }
+    const allCats = await this.prisma.category.findMany({ where: { name: { in: Array.from(categoryNames) } } });
+    const catMap = new Map(allCats.map(c => [c.name, c.id]));
+
+    // 5. Bulk Insert SubCategories
+    const subCatCreates = Array.from(subCategoryData.values()).map(sub => {
+       const catId = catMap.get(sub.categoryName);
+       return catId ? { name: sub.name, slug: this.slugify(sub.name), categoryId: catId } : null;
+    }).filter(Boolean);
+
+    if (subCatCreates.length > 0) {
+      await this.prisma.subCategory.createMany({
+        data: subCatCreates as any,
+        skipDuplicates: true,
+      });
+    }
+    const allSubCats = await this.prisma.subCategory.findMany({
+      where: { name: { in: Array.from(subCategoryData.values()).map(s => s.name) } }
+    });
+    const subCatMap = new Map(allSubCats.map(c => [`${c.categoryId}-${c.name}`, c.id]));
+
+    // 6. Bulk Prepare Master Products
+    const existingProducts = await this.prisma.masterProduct.findMany({
+      where: { sku: { in: newOrUpdateRows.map(r => r['SKU'].trim()) } },
+      select: { sku: true, id: true }
+    });
+    const existingSkus = new Set(existingProducts.map(p => p.sku));
+
+    const toInsert: any[] = [];
+    const toUpdate: any[] = [];
+    const rowImages = new Map<string, string>(); // sku -> imageUrl
+
+    for (const row of newOrUpdateRows) {
+      const sku = row['SKU'].trim();
+      const productName = row['Product name']?.trim();
+      if (!productName) {
+        errors.push(`Row ${row.originalIndex + 2}: missing Product name`);
+        failCount++;
+        continue;
+      }
+      const catName = row['Main Category']?.trim();
+      const subCatName = row['Sub Category']?.trim();
+      
+      const categoryId = catMap.get(catName);
+      const subCategoryId = subCatMap.get(`${categoryId}-${subCatName}`);
+
+      if (!categoryId || !subCategoryId) {
+        errors.push(`Row ${row.originalIndex + 2}: missing or invalid category mapping`);
+        failCount++;
+        continue;
+      }
+
+      const companyName = row['Company']?.trim();
+      const chemCompName = row['Chemical Composition']?.trim();
+      
+      const productData = {
+        sku: sku,
+        name: productName,
+        slug: this.slugify(productName),
+        description: row['Description']?.trim() || null,
+        categoryId: categoryId,
+        subCategoryId: subCategoryId,
+        companyId: companyName ? companyMap.get(companyName) || null : null,
+        chemicalCompositionId: chemCompName ? chemMap.get(chemCompName) || null : null,
+        manufacturer: companyName || null,
+        chemicalComposition: chemCompName || null,
+      };
+
+      if (row['Image']?.trim()) {
+        rowImages.set(sku, row['Image'].trim());
+      }
+
+      if (existingSkus.has(sku)) {
+        if (operation === 'NEW') {
+           errors.push(`Row ${row.originalIndex + 2}: SKU ${sku} already exists`);
+           failCount++;
+        } else {
+           toUpdate.push(productData);
+        }
+      } else {
+         toInsert.push(productData);
+      }
+    }
+
+    if (toInsert.length > 0) {
+      const result = await this.prisma.masterProduct.createMany({
+        data: toInsert,
+        skipDuplicates: true
+      });
+      successCount += result.count;
+    }
+
+    if (toUpdate.length > 0) {
+      // Chunk updates to avoid freezing Node.js event loop
+      const chunkArray = (array, size) => Array.from({ length: Math.ceil(array.length / size) }, (v, i) => array.slice(i * size, i * size + size));
+      const chunks = chunkArray(toUpdate, 50);
+      for (const chunk of chunks) {
+        await Promise.all(
+          chunk.map(async (data) => {
+            try {
+              await this.prisma.masterProduct.update({
+                where: { sku: data.sku },
+                data: data
+              });
+              successCount++;
+            } catch(e) {
+              failCount++;
+              errors.push(`Failed to update SKU ${data.sku}: ${e.message}`);
+            }
+          })
+        );
+      }
+    }
+
+    // 7. Bulk Images
+    if (rowImages.size > 0) {
+      const insertedProducts = await this.prisma.masterProduct.findMany({
+        where: { sku: { in: Array.from(rowImages.keys()) } },
+        select: { id: true, sku: true }
+      });
+      
+      const imagesToInsert: any[] = [];
+      for (const product of insertedProducts) {
+        imagesToInsert.push({
+          masterProductId: product.id,
+          url: rowImages.get(product.sku as string)!
+        });
+      }
+
+      if (imagesToInsert.length > 0) {
+        if (operation === 'NEW') {
+          await this.prisma.masterProductImage.createMany({
+            data: imagesToInsert
+          });
+        }
+      }
+    }
+
+    return { successCount, failCount, errors };
   }
 
   async exportToCsv(): Promise<string> {
@@ -221,6 +289,7 @@ export class MasterProductsBulkService {
   }
 
   private slugify(text: string): string {
+    if (!text) return '';
     return text.toString().toLowerCase()
       .replace(/\s+/g, '-')           // Replace spaces with -
       .replace(/[^\w\-]+/g, '')       // Remove all non-word chars

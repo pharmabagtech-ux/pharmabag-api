@@ -58,6 +58,7 @@ export class ProductsService {
       slug: dto.slug
         ? dto.slug.trim().toLowerCase()
         : this.generateSlug(dto.name),
+      sku: dto.sku ? dto.sku.trim() : undefined,
       externalId: dto.externalId ? dto.externalId.trim() : undefined,
       masterProductId: dto.masterProductId ? dto.masterProductId.trim() : undefined,
     };
@@ -122,12 +123,36 @@ export class ProductsService {
     }
 
     const isFromMaster = !!masterProductId;
+
+    // Find or create Company and ChemicalComposition
+    let companyId: string | null = null;
+    if (normalized.manufacturer) {
+      const company = await this.prisma.company.upsert({
+        where: { name: normalized.manufacturer },
+        update: {},
+        create: { name: normalized.manufacturer },
+      });
+      companyId = company.id;
+    }
+
+    let chemicalCompositionId: string | null = null;
+    if (normalized.chemicalComposition) {
+      const cc = await this.prisma.chemicalComposition.upsert({
+        where: { name: normalized.chemicalComposition },
+        update: {},
+        create: { name: normalized.chemicalComposition },
+      });
+      chemicalCompositionId = cc.id;
+    }
     
     const productData: Prisma.ProductCreateInput = {
       seller: { connect: { id: seller.id } },
       category: { connect: { id: normalized.categoryId } },
       subCategory: { connect: { id: normalized.subCategoryId } },
       masterProduct: isFromMaster ? { connect: { id: masterProductId } } : undefined,
+      sku: normalized.sku,
+      company: companyId ? { connect: { id: companyId } } : undefined,
+      chemicalCompositionRef: chemicalCompositionId ? { connect: { id: chemicalCompositionId } } : undefined,
       name: normalized.name,
       slug: normalized.slug,
       externalId: normalized.externalId,
@@ -217,12 +242,35 @@ export class ProductsService {
     category: { name: string },
     subCategory: { name: string },
   ) {
+    let companyId: string | null = null;
+    if (dto.manufacturer) {
+      const company = await this.prisma.company.upsert({
+        where: { name: dto.manufacturer.trim() },
+        update: {},
+        create: { name: dto.manufacturer.trim() },
+      });
+      companyId = company.id;
+    }
+
+    let chemicalCompositionId: string | null = null;
+    if (dto.chemicalComposition) {
+      const cc = await this.prisma.chemicalComposition.upsert({
+        where: { name: dto.chemicalComposition.trim() },
+        update: {},
+        create: { name: dto.chemicalComposition.trim() },
+      });
+      chemicalCompositionId = cc.id;
+    }
+
     const updated = await this.prisma.product.update({
       where: { id: productId },
       data: {
         sellerId,
         categoryId: dto.categoryId,
         subCategoryId: dto.subCategoryId,
+        sku: dto.sku,
+        companyId,
+        chemicalCompositionId,
         name: dto.name,
         slug: dto.slug,
         manufacturer: dto.manufacturer,
@@ -416,13 +464,38 @@ export class ProductsService {
 
     // Trim strings
     if (productData.name) productData.name = productData.name.trim();
+    if (productData.sku) productData.sku = productData.sku.trim();
     if (productData.manufacturer) productData.manufacturer = productData.manufacturer.trim();
     if (productData.chemicalComposition) productData.chemicalComposition = productData.chemicalComposition.trim();
     if (productData.description) productData.description = productData.description.trim();
 
+    let companyId: string | undefined = undefined;
+    if (productData.manufacturer) {
+      const company = await this.prisma.company.upsert({
+        where: { name: productData.manufacturer },
+        update: {},
+        create: { name: productData.manufacturer },
+      });
+      companyId = company.id;
+    }
+
+    let chemicalCompositionId: string | undefined = undefined;
+    if (productData.chemicalComposition) {
+      const cc = await this.prisma.chemicalComposition.upsert({
+        where: { name: productData.chemicalComposition },
+        update: {},
+        create: { name: productData.chemicalComposition },
+      });
+      chemicalCompositionId = cc.id;
+    }
+
+    const dataToUpdate: any = { ...productData };
+    if (companyId) dataToUpdate.companyId = companyId;
+    if (chemicalCompositionId) dataToUpdate.chemicalCompositionId = chemicalCompositionId;
+
     const updated = await this.prisma.product.update({
       where: { id: product.id },
-      data: productData,
+      data: dataToUpdate,
       include: {
         category: true,
         subCategory: true,
@@ -760,10 +833,13 @@ export class ProductsService {
         },
         select: {
           id: true,
+          sku: true,
           name: true,
           manufacturer: true,
+          company: { select: { name: true } },
           slug: true,
           chemicalComposition: true,
+          chemicalCompositionRef: { select: { name: true } },
           mrp: true,
           gstPercent: true,
           categoryId: true,
@@ -776,9 +852,10 @@ export class ProductsService {
 
       return suggestions.map((s) => ({
         id: s.id,
+        sku: s.sku,
         productName: s.name,
-        companyName: s.manufacturer,
-        chemicalCombination: s.chemicalComposition,
+        companyName: s.company?.name || s.manufacturer || "N/A",
+        chemicalCombination: s.chemicalCompositionRef?.name || s.chemicalComposition || "N/A",
         slug: s.slug,
         mrp: s.mrp,
         gstPercent: s.gstPercent,
@@ -797,8 +874,10 @@ export class ProductsService {
       },
       select: {
         id: true,
+        sku: true,
         name: true,
         manufacturer: true,
+        company: { select: { name: true } },
         slug: true,
         mrp: true,
       },
@@ -808,8 +887,9 @@ export class ProductsService {
 
     return products.map((p) => ({
       id: p.id,
+      sku: p.sku,
       productName: p.name,
-      companyName: p.manufacturer,
+      companyName: p.company?.name || p.manufacturer || "N/A",
       slug: p.slug,
       mrp: p.mrp,
     }));
