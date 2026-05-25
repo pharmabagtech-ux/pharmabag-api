@@ -34,6 +34,14 @@ export class AnalyticsService {
    */
   async recordView(productId: string) {
     try {
+      // Check if product exists to avoid FK error when a MasterProduct ID is passed
+      const exists = await this.prisma.product.findUnique({
+        where: { id: productId },
+        select: { id: true },
+      });
+
+      if (!exists) return;
+
       await this.prisma.productAnalytics.upsert({
         where: { productId },
         create: {

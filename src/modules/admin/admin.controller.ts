@@ -163,6 +163,18 @@ export class AdminController {
     return { message: 'Product retrieved successfully', data };
   }
 
+  @Patch('products/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update a product (Admin)' })
+  @ApiResponse({ status: 200, description: 'Product updated' })
+  async updateProduct(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: any,
+  ) {
+    const data = await this.adminService.updateProduct(id, payload);
+    return { message: 'Product updated successfully', data };
+  }
+
   @Patch('products/:id/disable')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Disable a product (set isActive=false)' })

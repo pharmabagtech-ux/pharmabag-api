@@ -489,6 +489,24 @@ export class AdminService {
     return product;
   }
 
+  async updateProduct(id: string, payload: any) {
+    const product = await this.prisma.product.findUnique({ where: { id } });
+    if (!product) throw new NotFoundException('Product not found');
+
+    const updateData: Prisma.ProductUpdateInput = {};
+    if (payload.mrp !== undefined && payload.mrp !== "") updateData.mrp = Number(payload.mrp);
+    if (payload.minimumOrderQuantity !== undefined && payload.minimumOrderQuantity !== "") updateData.minimumOrderQuantity = Number(payload.minimumOrderQuantity);
+    if (payload.maximumOrderQuantity !== undefined && payload.maximumOrderQuantity !== "") updateData.maximumOrderQuantity = Number(payload.maximumOrderQuantity);
+    if (payload.description !== undefined) updateData.description = payload.description;
+    if (payload.gstPercent !== undefined && payload.gstPercent !== "") updateData.gstPercent = Number(payload.gstPercent);
+    if (payload.categoryId && payload.categoryId !== "") updateData.category = { connect: { id: payload.categoryId } };
+
+    return this.prisma.product.update({
+      where: { id },
+      data: updateData,
+    });
+  }
+
   async disableProduct(productId: string) {
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException('Product not found');

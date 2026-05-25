@@ -261,6 +261,7 @@ model Order {
   id            String        @id @default(uuid())
   buyerId       String
   totalAmount   Float
+  totalGstAmount Float        @default(0)
   orderStatus   OrderStatus   @default(PLACED)
   paymentStatus PaymentStatus @default(PENDING)
   createdAt     DateTime      @default(now())

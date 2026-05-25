@@ -19,16 +19,41 @@ export class CartService {
   // ──────────────────────────────────────────────
 
   async addToCart(userId: string, dto: AddToCartDto) {
-    const { productId, quantity } = dto;
+    let { productId } = dto;
+    const { quantity } = dto;
 
     // 1. Validate product exists, is active, and not soft-deleted
-    const product = await this.prisma.product.findFirst({
+    let product = await this.prisma.product.findFirst({
       where: { id: productId, isActive: true, deletedAt: null },
       include: {
         seller: { select: { id: true, verificationStatus: true } },
         batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
       },
     });
+
+    if (!product) {
+      // Check if it's a MasterProduct ID
+      const masterProduct = await this.prisma.masterProduct.findFirst({
+        where: { id: productId, isActive: true, deletedAt: null },
+        include: {
+          products: {
+            where: { isActive: true, deletedAt: null },
+            include: {
+              seller: { select: { id: true, verificationStatus: true } },
+              batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
+            },
+            take: 1,
+          }
+        }
+      });
+
+      if (masterProduct && masterProduct.products.length > 0) {
+        product = masterProduct.products[0] as any;
+        productId = product!.id;
+      } else {
+        throw new NotFoundException('Product not found or is no longer available');
+      }
+    }
 
     if (!product) {
       throw new NotFoundException('Product not found or is no longer available');
@@ -135,6 +160,7 @@ export class CartService {
                 chemicalComposition: true,
                 mrp: true,
                 gstPercent: true,
+                masterProductId: true,
                 minimumOrderQuantity: true,
                 maximumOrderQuantity: true,
                 isActive: true,
@@ -167,6 +193,7 @@ export class CartService {
 
     const items = cart.items.map((item) => ({
       id: item.id,
+      productId: item.productId,
       product: item.product,
       quantity: item.quantity,
       unitPrice: item.unitPrice,

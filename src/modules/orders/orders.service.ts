@@ -112,10 +112,27 @@ export class OrdersService {
     }
 
     // 3. Calculate total amount
-    const totalAmount = cart.items.reduce(
-      (sum, item) => sum + item.quantity * item.unitPrice,
-      0,
-    );
+    const fallbackGst = 12;
+    let subtotal = 0;
+    let gstAmount = 0;
+    
+    cart.items.forEach((item) => {
+      const itemSubtotal = item.quantity * item.unitPrice;
+      const gstPercent = (item.product as any).gstPercent ?? fallbackGst;
+      const itemGst = itemSubtotal * (gstPercent / 100);
+      
+      subtotal += itemSubtotal;
+      gstAmount += itemGst;
+    });
+
+    subtotal = Math.round(subtotal);
+    gstAmount = Math.round(gstAmount);
+
+    const shippingThreshold = 5000;
+    const shippingFee = 250;
+    const shipping = subtotal > shippingThreshold ? 0 : shippingFee;
+
+    const totalAmount = subtotal + gstAmount + shipping;
 
     // 4. Execute transactional checkout
     const order = await this.prisma.$transaction(async (tx) => {
@@ -124,6 +141,7 @@ export class OrdersService {
         data: {
           buyerId: userId,
           totalAmount,
+          totalGstAmount: gstAmount,
           orderStatus: OrderStatus.PLACED,
           referralCodeId: buyerProfile.referralCodeId,
         },

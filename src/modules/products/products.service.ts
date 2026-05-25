@@ -659,7 +659,13 @@ export class ProductsService {
           images: { take: 1 },
           products: {
             where: { isActive: true, deletedAt: null },
-            select: { mrp: true, discountType: true, discountMeta: true, minimumOrderQuantity: true },
+            select: { 
+              mrp: true, 
+              discountType: true, 
+              discountMeta: true, 
+              minimumOrderQuantity: true,
+              batches: { select: { stock: true } }
+            },
             orderBy: { mrp: 'asc' },
           },
         },
@@ -742,6 +748,15 @@ export class ProductsService {
     const bestListingId = listings.length > 0 ? listings[0].id : null;
     const hasSellers = listings.length > 0;
 
+    let totalStock = 0;
+    for (const p of listings) {
+      if (p.batches) {
+        for (const b of p.batches) {
+          totalStock += b.stock;
+        }
+      }
+    }
+
     return {
       id: m.id,
       name: m.name,
@@ -754,6 +769,7 @@ export class ProductsService {
       bestListingId,
       hasSellers,
       sellerCount: listings.length,
+      stock: totalStock,
       image: m.images?.[0]?.url || null,
       category: m.category,
       subCategory: m.subCategory,
