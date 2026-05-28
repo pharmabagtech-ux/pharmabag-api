@@ -297,4 +297,12 @@ export class MasterProductsBulkService {
       .replace(/^-+/, '')             // Trim - from start of text
       .replace(/-+$/, '');            // Trim - from end of text
   }
+
+  async activateAll(): Promise<{ count: number }> {
+    const result = await this.prisma.masterProduct.updateMany({
+      where: { isActive: false, deletedAt: null },
+      data: { isActive: true },
+    });
+    return { count: result.count };
+  }
 }

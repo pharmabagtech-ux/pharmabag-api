@@ -7,6 +7,7 @@ import {
   HttpException,
   HttpStatus,
   Get,
+  Patch,
   Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -95,6 +96,14 @@ export class MasterProductsBulkController {
     }
     const result = await this.bulkService.processBulkCsv(file.buffer, 'DELETE');
     return { message: 'Bulk delete processing completed', data: result };
+  }
+
+  @Patch('activate-all')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Activate all inactive master products so sellers can search and add them' })
+  async activateAll() {
+    const result = await this.bulkService.activateAll();
+    return { message: `Activated ${result.count} master products`, data: result };
   }
 
   @Get('export')
