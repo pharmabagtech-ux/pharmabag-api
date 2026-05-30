@@ -80,7 +80,7 @@ export class StorageController {
 
   @Post('kyc')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.BUYER, Role.SELLER)
+  @Roles(Role.BUYER, Role.SELLER, Role.ADMIN)
   @UseInterceptors(FileInterceptor('file', multerOptions))
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Upload KYC document (buyer/seller)' })

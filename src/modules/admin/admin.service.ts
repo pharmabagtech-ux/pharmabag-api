@@ -251,6 +251,51 @@ export class AdminService {
     return user;
   }
 
+  async updateUser(userId: string, payload: any) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { sellerProfile: true, buyerProfile: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const { sellerProfile, buyerProfile, ...userUpdateData } = payload;
+    const transaction: any[] = [];
+
+    if (Object.keys(userUpdateData).length > 0) {
+      transaction.push(
+        this.prisma.user.update({
+          where: { id: userId },
+          data: userUpdateData,
+        })
+      );
+    }
+
+    if (sellerProfile && user.sellerProfile) {
+      transaction.push(
+        this.prisma.sellerProfile.update({
+          where: { userId },
+          data: sellerProfile,
+        })
+      );
+    }
+
+    if (buyerProfile && user.buyerProfile) {
+      transaction.push(
+        this.prisma.buyerProfile.update({
+          where: { userId },
+          data: buyerProfile,
+        })
+      );
+    }
+
+    if (transaction.length > 0) {
+      await this.prisma.$transaction(transaction);
+    }
+
+    this.logger.log(`User ${userId} updated by admin`);
+    return this.getUserById(userId);
+  }
+
   async getPendingUsers() {
     return this.prisma.user.findMany({
       where: { status: UserStatus.PENDING },

@@ -90,6 +90,19 @@ export class AdminController {
     return { message: 'User retrieved successfully', data };
   }
 
+  @Patch('users/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update user details' })
+  @ApiResponse({ status: 200, description: 'User updated' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: any,
+  ) {
+    const data = await this.adminService.updateUser(id, payload);
+    return { message: 'User updated successfully', data };
+  }
+
   @Patch('users/:id/approve')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Approve a user KYC' })
