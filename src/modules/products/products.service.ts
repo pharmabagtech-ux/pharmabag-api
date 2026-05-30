@@ -124,6 +124,25 @@ export class ProductsService {
 
     const isFromMaster = !!masterProductId;
 
+    // Prevent duplicate products for the same seller
+    const duplicateCheckWhere: Prisma.ProductWhereInput = {
+      sellerId: seller.id,
+      deletedAt: null,
+    };
+    if (masterProductId) {
+      duplicateCheckWhere.masterProductId = masterProductId;
+    } else {
+      duplicateCheckWhere.name = { equals: normalized.name, mode: 'insensitive' };
+      duplicateCheckWhere.manufacturer = { equals: normalized.manufacturer, mode: 'insensitive' };
+    }
+
+    const duplicateProduct = await this.prisma.product.findFirst({
+      where: duplicateCheckWhere,
+    });
+
+    if (duplicateProduct) {
+      throw new BadRequestException('You have already added this product. Please update your existing listing instead.');
+    }
     // Find or create Company and ChemicalComposition
     let companyId: string | null = null;
     if (normalized.manufacturer) {
