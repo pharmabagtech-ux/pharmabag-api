@@ -77,9 +77,11 @@ export class MasterProductsBulkService {
       if (row['Chemical Composition']) chemCompNames.add(row['Chemical Composition'].trim());
       if (row['Main Category']) categoryNames.add(row['Main Category'].trim());
       if (row['Sub Category'] && row['Main Category']) {
-        subCategoryData.set(row['Sub Category'].trim(), {
-           name: row['Sub Category'].trim(), 
-           categoryName: row['Main Category'].trim()
+        const mainCat = row['Main Category'].trim();
+        const subCat = row['Sub Category'].trim();
+        subCategoryData.set(`${mainCat}-${subCat}`, {
+           name: subCat, 
+           categoryName: mainCat
         });
       }
     }
@@ -153,11 +155,17 @@ export class MasterProductsBulkService {
       const catName = row['Main Category']?.trim();
       const subCatName = row['Sub Category']?.trim();
       
+      if (!catName || !subCatName) {
+        errors.push(`Row ${row.originalIndex + 2}: missing Main Category or Sub Category in CSV`);
+        failCount++;
+        continue;
+      }
+
       const categoryId = catMap.get(catName);
       const subCategoryId = subCatMap.get(`${categoryId}-${subCatName}`);
 
       if (!categoryId || !subCategoryId) {
-        errors.push(`Row ${row.originalIndex + 2}: missing or invalid category mapping`);
+        errors.push(`Row ${row.originalIndex + 2}: invalid category mapping (Main: '${catName}', Sub: '${subCatName}')`);
         failCount++;
         continue;
       }
