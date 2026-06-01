@@ -539,6 +539,14 @@ export class ProductsService {
       );
     }
 
+    // Touch the master product to reflect recent modifications
+    if (updated.masterProductId) {
+      await this.prisma.masterProduct.update({
+        where: { id: updated.masterProductId },
+        data: { updatedAt: new Date() },
+      }).catch(err => this.logger.warn(`Failed to touch MasterProduct ${updated.masterProductId}: ${err.message}`));
+    }
+
     if (
       dto.name ||
       dto.manufacturer ||
@@ -606,6 +614,8 @@ export class ProductsService {
       isActive: true,
       deletedAt: null,
     };
+
+
 
     const andConditions: Prisma.MasterProductWhereInput[] = [];
 
@@ -933,6 +943,31 @@ export class ProductsService {
   /**
    * List all categories (public).
    */
+  async getManufacturers() {
+    const groups = await this.prisma.masterProduct.groupBy({
+      by: ['manufacturer'],
+      _count: {
+        id: true,
+      },
+      where: {
+        deletedAt: null,
+      },
+      orderBy: {
+        _count: {
+          id: 'desc',
+        },
+      },
+    });
+
+    return groups
+      .filter((g) => g.manufacturer && g.manufacturer.trim().length > 0)
+      .map((g, i) => ({
+        id: `mfr_${i}`,
+        name: g.manufacturer,
+        productCount: g._count.id,
+      }));
+  }
+
   async getCategories() {
     return this.prisma.category.findMany({
       include: { subCategories: true },
