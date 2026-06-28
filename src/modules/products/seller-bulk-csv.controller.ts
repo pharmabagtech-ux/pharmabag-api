@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
-import type { Express, Response } from 'express';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -36,7 +36,7 @@ export class SellerBulkCsvController {
       res.setHeader('Content-Disposition', 'attachment; filename=pharmabag-product-template.csv');
       res.status(HttpStatus.OK).send(csv);
     } catch {
-      throw new HttpException('Failed to generate template', HttpStatus.INTERNAL_SERVER_ERROR);
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).send('Failed to generate template');
     }
   }
 
