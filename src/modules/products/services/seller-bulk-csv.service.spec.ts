@@ -115,5 +115,34 @@ describe('SellerBulkCsvService', () => {
         }),
       );
     });
+
+    it('skips row and records failure when create() throws', async () => {
+      mockPrisma.masterProduct.findFirst.mockResolvedValue({
+        id: 'master-1', name: 'Dolo 650', categoryId: 'cat-1', subCategoryId: 'sub-1',
+        manufacturer: 'Micro Labs', chemicalComposition: 'Paracetamol 650mg',
+        gstPercent: 12, description: null, company: null,
+      });
+      mockPrisma.product.findFirst.mockResolvedValue(null);
+      mockProductsService.create.mockRejectedValue(new Error('DB constraint'));
+      const csv = Buffer.from('Product Name,Stock,Price\nDolo 650,100,28\n');
+      const result = await service.processUpload(csv, userId);
+      expect(result.skippedCount).toBe(1);
+      expect(result.skipped[0].reason).toBe('failed to create listing');
+      expect(result.successCount).toBe(0);
+    });
+
+    it('skips row with non-numeric stock', async () => {
+      const csv = Buffer.from('Product Name,Stock,Price\nDolo 650,abc,28\n');
+      const result = await service.processUpload(csv, userId);
+      expect(result.skippedCount).toBe(1);
+      expect(result.skipped[0].reason).toBe('missing stock or price');
+    });
+
+    it('skips row with zero price', async () => {
+      const csv = Buffer.from('Product Name,Stock,Price\nDolo 650,100,0\n');
+      const result = await service.processUpload(csv, userId);
+      expect(result.skippedCount).toBe(1);
+      expect(result.skipped[0].reason).toBe('missing stock or price');
+    });
   });
 });

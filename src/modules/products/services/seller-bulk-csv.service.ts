@@ -119,7 +119,8 @@ export class SellerBulkCsvService {
 
   private parseCsv(buffer: Buffer): Promise<Record<string, string>[]> {
     const rows: Record<string, string>[] = [];
-    const stream = Readable.from(buffer.toString());
+    const content = buffer.toString('utf8').replace(/^﻿/, '');
+    const stream = Readable.from([content]);
     return new Promise((resolve, reject) => {
       stream
         .pipe(csv())
