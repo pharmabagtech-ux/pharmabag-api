@@ -1,4 +1,4 @@
-name: Deploy API to EC2
+name: Deploy API
 
 on:
   push:
@@ -7,7 +7,6 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to EC2
     runs-on: ubuntu-latest
 
     steps:
@@ -24,7 +23,7 @@ jobs:
           remote_user: ${{ secrets.SERVER_USER }}
           remote_key: ${{ secrets.SERVER_SSH_KEY }}
 
-      - name: Deploy API
+      - name: Deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -34,15 +33,19 @@ jobs:
             set -e
 
             cd /home/ubuntu/project-2-pharmabag-api
-            
+
+            echo "Installing dependencies..."
+            npm ci
+
+            echo "Generating Prisma Client..."
             npx prisma generate
 
-            npx prisma migrate deploy
-            
+            echo "Building application..."
             npm run build
 
+            echo "Restarting PM2..."
             pm2 restart pharmabag-api
 
             pm2 save
 
-            echo "Pharmabag API deployed successfully."
+            echo "Deployment completed successfully."
