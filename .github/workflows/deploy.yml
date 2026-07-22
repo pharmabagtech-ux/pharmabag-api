@@ -34,8 +34,6 @@ jobs:
             set -e
 
             cd /home/ubuntu/project-2-pharmabag-api
-
-            npm ci
             
             npx prisma generate
 
