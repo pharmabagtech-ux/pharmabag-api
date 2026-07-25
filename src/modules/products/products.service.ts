@@ -969,8 +969,19 @@ export class ProductsService {
   }
 
   async getCategories() {
+    // Only surface subcategories that have at least one active (non-deleted)
+    // master product, so the public nav menu reflects the live catalog instead
+    // of listing every taxonomy row. Empty subcategories reappear automatically
+    // once products are (re)uploaded.
     return this.prisma.category.findMany({
-      include: { subCategories: true },
+      include: {
+        subCategories: {
+          where: {
+            masterProducts: { some: { isActive: true, deletedAt: null } },
+          },
+          orderBy: { name: 'asc' },
+        },
+      },
       orderBy: { name: 'asc' },
     });
   }
