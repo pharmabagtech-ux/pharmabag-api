@@ -13,16 +13,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Sync Project to EC2
-        uses: burnett01/rsync-deployments@7.0.2
-        with:
-          switches: -avz --exclude=".git" --exclude="node_modules"
-          path: ./
-          remote_path: /home/ubuntu/project-2-pharmabag-api/
-          remote_host: ${{ secrets.SERVER_HOST }}
-          remote_user: ${{ secrets.SERVER_USER }}
-          remote_key: ${{ secrets.SERVER_SSH_KEY }}
-
       - name: Deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -33,6 +23,8 @@ jobs:
             set -e
 
             cd /home/ubuntu/project-2-pharmabag-api
+
+            git pull
 
             echo "Installing dependencies..."
             npm ci
