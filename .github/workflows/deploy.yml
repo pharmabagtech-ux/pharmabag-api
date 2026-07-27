@@ -12,6 +12,17 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        
+      - name: Sync Project to EC2
+        uses: burnett01/rsync-deployments@7.0.2
+        with:
+          switches: -avz 
+          path: ./
+          remote_path: /home/ubuntu/pharmabag-api
+          remote_host: ${{ secrets.SERVER_HOST }}
+          remote_user: ${{ secrets.SERVER_USER }}
+          remote_key: ${{ secrets.SERVER_SSH_KEY }}
+
 
       - name: Deploy
         uses: appleboy/ssh-action@v1.0.3
