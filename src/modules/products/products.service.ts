@@ -856,44 +856,78 @@ export class ProductsService {
 
     const q = query.trim();
     const words = q.split(/\s+/).filter((w) => w.length > 0);
+    const insensitive = 'insensitive' as Prisma.QueryMode;
+    const LIMIT = 10;
 
-    const buildFilter = (words: string[]) => {
-      return {
-        AND: words.map((w) => ({
-          OR: [
-            { name: { contains: w, mode: 'insensitive' as Prisma.QueryMode } },
-            { manufacturer: { contains: w, mode: 'insensitive' as Prisma.QueryMode } },
-            { chemicalComposition: { contains: w, mode: 'insensitive' as Prisma.QueryMode } },
-          ],
-        })),
-      };
+    // Whole-phrase match on the product name. This is what makes a short query
+    // like "A to Z" surface the "A to Z ..." family: the contiguous phrase only
+    // lives in those names, whereas the individual tokens "to"/"z" also hide
+    // inside unrelated products ("Labora*to*ries", "*Z*ydus", "Pantopra*z*ole").
+    const phraseFilter = { name: { contains: q, mode: insensitive } };
+
+    // Broad "every word appears somewhere" fallback — kept so partial/reordered
+    // queries (or ones matching only manufacturer/composition) still return
+    // results. Used only to top up the slots the phrase tier didn't fill.
+    const allWordsFilter = {
+      AND: words.map((w) => ({
+        OR: [
+          { name: { contains: w, mode: insensitive } },
+          { manufacturer: { contains: w, mode: insensitive } },
+          { chemicalComposition: { contains: w, mode: insensitive } },
+        ],
+      })),
+    };
+
+    // Both filters only reference fields common to MasterProduct and Product
+    // (name / manufacturer / chemicalComposition), so this shared shape lets the
+    // same ranking helper drive both model queries.
+    type SuggestWhere = typeof phraseFilter | typeof allWordsFilter;
+
+    // Fetch phrase (most relevant) matches first, then top up with the broad
+    // fallback (excluding rows already found), preserving relevance order
+    // instead of returning a purely alphabetical slice of the whole catalog.
+    const rankedFetch = async <T extends { id: string }>(
+      fetch: (extra: SuggestWhere) => Promise<T[]>,
+    ): Promise<T[]> => {
+      const phraseRows = await fetch(phraseFilter);
+      if (phraseRows.length >= LIMIT || words.length === 0) {
+        return phraseRows.slice(0, LIMIT);
+      }
+      const seen = new Set(phraseRows.map((r) => r.id));
+      const fallbackRows = await fetch(allWordsFilter);
+      return [
+        ...phraseRows,
+        ...fallbackRows.filter((r) => !seen.has(r.id)),
+      ].slice(0, LIMIT);
     };
 
     if (type === 'master') {
-      const suggestions = await this.prisma.masterProduct.findMany({
-        where: {
-          deletedAt: null,
-          isActive: true,
-          ...buildFilter(words),
-        },
-        select: {
-          id: true,
-          sku: true,
-          name: true,
-          manufacturer: true,
-          company: { select: { name: true } },
-          slug: true,
-          chemicalComposition: true,
-          chemicalCompositionRef: { select: { name: true } },
-          mrp: true,
-          gstPercent: true,
-          categoryId: true,
-          subCategoryId: true,
-          images: { select: { url: true }, take: 1 },
-        },
-        take: 10,
-        orderBy: { name: 'asc' },
-      });
+      const suggestions = await rankedFetch((extra) =>
+        this.prisma.masterProduct.findMany({
+          where: {
+            deletedAt: null,
+            isActive: true,
+            ...extra,
+          },
+          select: {
+            id: true,
+            sku: true,
+            name: true,
+            manufacturer: true,
+            company: { select: { name: true } },
+            slug: true,
+            chemicalComposition: true,
+            chemicalCompositionRef: { select: { name: true } },
+            mrp: true,
+            gstPercent: true,
+            categoryId: true,
+            subCategoryId: true,
+            images: { select: { url: true }, take: 1 },
+          },
+          take: LIMIT,
+          orderBy: { name: 'asc' },
+        }),
+      );
 
       return suggestions.map((s) => ({
         id: s.id,
@@ -910,25 +944,27 @@ export class ProductsService {
       }));
     }
 
-    const products = await this.prisma.product.findMany({
-      where: {
-        isActive: true,
-        approvalStatus: ProductApprovalStatus.APPROVED,
-        deletedAt: null,
-        ...buildFilter(words),
-      },
-      select: {
-        id: true,
-        sku: true,
-        name: true,
-        manufacturer: true,
-        company: { select: { name: true } },
-        slug: true,
-        mrp: true,
-      },
-      take: 10,
-      orderBy: { name: 'asc' },
-    });
+    const products = await rankedFetch((extra) =>
+      this.prisma.product.findMany({
+        where: {
+          isActive: true,
+          approvalStatus: ProductApprovalStatus.APPROVED,
+          deletedAt: null,
+          ...extra,
+        },
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          manufacturer: true,
+          company: { select: { name: true } },
+          slug: true,
+          mrp: true,
+        },
+        take: LIMIT,
+        orderBy: { name: 'asc' },
+      }),
+    );
 
     return products.map((p) => ({
       id: p.id,
