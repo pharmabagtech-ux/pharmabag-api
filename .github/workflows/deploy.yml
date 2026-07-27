@@ -35,8 +35,6 @@ jobs:
 
             cd /home/ubuntu/pharmabag-api
 
-            git pull
-
             echo "Installing dependencies..."
             npm ci
 
