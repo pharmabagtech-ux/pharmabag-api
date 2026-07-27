@@ -16,7 +16,7 @@ jobs:
       - name: Sync Project to EC2
         uses: burnett01/rsync-deployments@7.0.2
         with:
-          switches: -avz 
+          switches: -avzr --delete --exclude '.env' --exclude '.git' --exclude 'node_modules' --exclude '.github'
           path: ./
           remote_path: /home/ubuntu/pharmabag-api
           remote_host: ${{ secrets.SERVER_HOST }}
