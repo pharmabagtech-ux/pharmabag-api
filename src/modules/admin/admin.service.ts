@@ -474,6 +474,7 @@ export class AdminService {
         where,
         select: {
           id: true,
+          sku: true,
           name: true,
           chemicalComposition: true,
           manufacturer: true,
@@ -489,8 +490,31 @@ export class AdminService {
           masterProduct: {
             select: {
               id: true,
-              _count: { select: { products: true } }
-            }
+              sku: true,
+              _count: { select: { products: true } },
+              // All live seller listings for this catalog product, so the admin
+              // can see which sellers sell it (name/phone/price/stock/status)
+              // without an extra request.
+              products: {
+                where: { deletedAt: null },
+                select: {
+                  id: true,
+                  mrp: true,
+                  isActive: true,
+                  approvalStatus: true,
+                  seller: {
+                    select: {
+                      id: true,
+                      companyName: true,
+                      city: true,
+                      state: true,
+                      user: { select: { phone: true } },
+                    },
+                  },
+                  batches: { select: { stock: true } },
+                },
+              },
+            },
           },
           seller: { select: { id: true, companyName: true, userId: true } },
           category: { select: { id: true, name: true } },

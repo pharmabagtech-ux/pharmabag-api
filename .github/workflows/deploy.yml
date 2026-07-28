@@ -1,77 +1,52 @@
-name: Build and Deploy API
+name: Deploy API on EC2
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "prisma/**"
-      - "Dockerfile"
-      - "package*.json"
-
-env:
-  AWS_REGION: ap-south-1
-  ECR_REGISTRY: 318890247225.dkr.ecr.ap-south-1.amazonaws.com
-  ECR_REPOSITORY: pharmabag-api
-  EKS_CLUSTER: pharmabag-cluster
-  K8S_NAMESPACE: pharmabag
+    branches:
+      - main
 
 jobs:
-  build-and-push:
-    name: Build & Push to ECR
-    runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.vars.outputs.image_tag }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region $AWS_REGION | \
-            docker login --username AWS --password-stdin $ECR_REGISTRY
-
-      - name: Set image tag
-        id: vars
-        run: echo "image_tag=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
-
-      - name: Build and push
-        run: |
-          IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY
-          TAG=${{ steps.vars.outputs.image_tag }}
-          docker build -t $IMAGE:$TAG -t $IMAGE:latest .
-          docker push $IMAGE:$TAG
-          docker push $IMAGE:latest
-
   deploy:
-    name: Deploy to EKS
     runs-on: ubuntu-latest
-    needs: build-and-push
 
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Sync Project to EC2
+        uses: burnett01/rsync-deployments@7.0.2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          switches: -avzr --delete --exclude '.env' --exclude '.git' --exclude 'node_modules' --exclude '.github'
+          path: ./
+          remote_path: /home/ubuntu/pharmabag-api
+          remote_host: ${{ secrets.SERVER_HOST }}
+          remote_user: ${{ secrets.SERVER_USER }}
+          remote_key: ${{ secrets.SERVER_SSH_KEY }}
 
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER
 
-      - name: Update deployment image
-        run: |
-          IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:${{ needs.build-and-push.outputs.image_tag }}
-          kubectl set image deployment/pharmabag-api pharmabag-api=$IMAGE -n $K8S_NAMESPACE
-          kubectl set image deployment/pharmabag-api migrate=$IMAGE -n $K8S_NAMESPACE
+      - name: Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
 
-      - name: Wait for rollout
-        run: kubectl rollout status deployment/pharmabag-api -n $K8S_NAMESPACE --timeout=5m
+            cd /home/ubuntu/pharmabag-api
+
+            echo "Installing dependencies..."
+            npm ci
+
+            echo "Generating Prisma Client..."
+            npx prisma generate
+
+            echo "Building application..."
+            npm run build
+
+            echo "Restarting PM2..."
+            pm2 restart pharmabag-api
+
+            pm2 save
+
+            echo "Deployment completed successfully."
