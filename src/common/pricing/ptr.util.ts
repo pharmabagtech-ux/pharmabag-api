@@ -48,11 +48,32 @@ export type DiscountMeta = {
 } | null;
 
 /**
+ * Bonus as a proportion of the price, `get / (buy + get)`.
+ *
+ * Free goods are passed to the buyer as a lower unit price rather than as
+ * extra units in the order: on "buy 20 get 2" the buyer receives 22 units'
+ * worth of value for 20 units' worth of money, so the effective rate falls by
+ * 2/22 = 9.0909%. Returns 0 when there is no usable bonus.
+ */
+export function getBonusFraction(
+  buy?: number | null,
+  get?: number | null,
+): number {
+  const b = buy ?? 0;
+  const g = get ?? 0;
+  if (b <= 0 || g <= 0) return 0;
+  return g / (b + g);
+}
+
+/**
  * Net per-unit price a buyer pays, BEFORE GST.
  *
- * Bonus quantities (buy X get Y) deliberately do NOT change the price: free
- * units are shown to the buyer but never billed, and are not added to the
- * order. Only a PTR discount, or an explicit special price, moves the number.
+ * Follows the agreed formula: PTR - bonus - discount (+ tax added downstream).
+ * Both reductions are proportional, so the order they are applied in does not
+ * change the result.
+ *
+ * Free units are NOT added to the order — the bonus is passed on as this lower
+ * unit price instead, and shown to the buyer for information only.
  *
  * Returns null when it cannot be computed (missing mrp/gst, or an unmapped GST
  * slab) so the caller can fall back to its existing behaviour.
@@ -68,22 +89,31 @@ export function calculateNetUnitPrice(
   const ptr = calculatePTR(mrp, gstPercent);
   if (ptr === null) return null;
 
+  // No scheme at all: the buyer still pays PTR, not MRP.
+  if (!discountType) return ptr;
+
   const meta = discountMeta ?? {};
-  const discountPercent = meta.discountPercent ?? 0;
 
-  switch (discountType) {
-    case 'PTR_DISCOUNT':
-    case 'PTR_PLUS_SAME_PRODUCT_BONUS':
-    case 'PTR_PLUS_DIFFERENT_PRODUCT_BONUS':
-      return round2(ptr - (ptr * discountPercent) / 100);
+  const appliesDiscount =
+    discountType === 'PTR_DISCOUNT' ||
+    discountType === 'PTR_PLUS_SAME_PRODUCT_BONUS' ||
+    discountType === 'PTR_PLUS_DIFFERENT_PRODUCT_BONUS';
 
-    // Bonus-only schemes give free units; the unit price stays at PTR.
-    case 'SAME_PRODUCT_BONUS':
-    case 'DIFFERENT_PRODUCT_BONUS':
-      return ptr;
+  const appliesBonus =
+    discountType === 'SAME_PRODUCT_BONUS' ||
+    discountType === 'DIFFERENT_PRODUCT_BONUS' ||
+    discountType === 'PTR_PLUS_SAME_PRODUCT_BONUS' ||
+    discountType === 'PTR_PLUS_DIFFERENT_PRODUCT_BONUS';
 
-    // No scheme at all: the buyer still pays PTR, not MRP.
-    default:
-      return ptr;
+  let net = ptr;
+
+  if (appliesBonus) {
+    net = net * (1 - getBonusFraction(meta.buy, meta.get));
   }
+
+  if (appliesDiscount) {
+    net = net * (1 - (meta.discountPercent ?? 0) / 100);
+  }
+
+  return round2(net);
 }
