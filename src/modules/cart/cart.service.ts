@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { calculateNetUnitPrice } from '../../common/pricing/ptr.util';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 
@@ -109,8 +110,17 @@ export class CartService {
       );
     }
 
-    // 8. Snapshot the unit price (MRP)
-    const unitPrice = product.mrp;
+    // 8. Snapshot the unit price the buyer actually pays.
+    //    A retailer pays PTR less any scheme discount — not the printed MRP.
+    //    GST is added later from the listing's own gstPercent, so this stays
+    //    GST-exclusive. Falls back to MRP if the price cannot be derived.
+    const unitPrice =
+      calculateNetUnitPrice(
+        product.mrp,
+        (product as any).gstPercent,
+        (product as any).discountType,
+        (product as any).discountMeta,
+      ) ?? product.mrp;
 
     // 9. Create cart item
     const cartItem = await this.prisma.cartItem.create({

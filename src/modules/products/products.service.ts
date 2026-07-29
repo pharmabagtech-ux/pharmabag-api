@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, ProductApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { calculateNetUnitPrice } from '../../common/pricing/ptr.util';
 import { InventoryService } from './services/inventory.service';
 import { SearchIndexService } from './services/search-index.service';
 import { AnalyticsService } from './services/analytics.service';
@@ -688,10 +689,11 @@ export class ProductsService {
           images: { take: 1 },
           products: {
             where: { isActive: true, deletedAt: null },
-            select: { 
-              mrp: true, 
-              discountType: true, 
-              discountMeta: true, 
+            select: {
+              mrp: true,
+              gstPercent: true,
+              discountType: true,
+              discountMeta: true,
               minimumOrderQuantity: true,
               batches: { select: { stock: true } }
             },
@@ -787,7 +789,18 @@ export class ProductsService {
 
   private mapMasterToGrid(m: any) {
     const listings = m.products || [];
-    const minPrice = listings.length > 0 ? listings[0].mrp : m.mrp;
+    const best = listings[0];
+    // Grid price is what the buyer will actually be charged (PTR less any
+    // scheme discount, GST-exclusive) — not the printed MRP.
+    const minPrice =
+      listings.length > 0
+        ? calculateNetUnitPrice(
+            best.mrp,
+            best.gstPercent,
+            best.discountType,
+            best.discountMeta,
+          ) ?? best.mrp
+        : m.mrp;
     const minMoq = listings.length > 0 ? (listings[0].minimumOrderQuantity || 1) : 1;
     const bestListingId = listings.length > 0 ? listings[0].id : null;
     const hasSellers = listings.length > 0;
@@ -889,9 +902,16 @@ export class ProductsService {
       listings: (m.products || []).map((p: any) => {
           const batches = p.batches || [];
           const stock = batches.reduce((sum: number, b: any) => sum + b.stock, 0);
+          // A retailer pays PTR less any scheme discount, not the printed MRP.
+          // `price` is GST-exclusive, matching what the cart will charge.
+          const netUnitPrice =
+            calculateNetUnitPrice(p.mrp, p.gstPercent, p.discountType, p.discountMeta) ??
+            p.mrp;
           return {
               id: p.id,
-              price: p.mrp,
+              price: netUnitPrice,
+              mrp: p.mrp,
+              gstPercent: p.gstPercent,
               discountType: p.discountType,
               discountMeta: p.discountMeta,
               stock,
