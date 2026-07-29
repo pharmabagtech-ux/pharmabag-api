@@ -4,6 +4,7 @@ import {
   IsOptional,
   Matches,
   IsEmail,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -33,21 +34,23 @@ export class CreateSellerProfileDto {
   @IsOptional()
   cancelCheck?: string;
 
-  @ApiProperty({ example: '27AABCU9603R1ZM', description: '15-char GSTIN' })
+  @ApiPropertyOptional({ example: '27AABCU9603R1ZM', description: '15-char GSTIN (required if no PAN)' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
+  @ValidateIf((o) => !!o.gstNumber)
   @Matches(/^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}$/, {
     message: 'gstNumber must be a valid 15-character GSTIN',
   })
-  gstNumber: string;
+  gstNumber?: string;
 
-  @ApiProperty({ example: 'ABCDE1234F', description: '10-char PAN' })
+  @ApiPropertyOptional({ example: 'ABCDE1234F', description: '10-char PAN (required if no GST)' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
+  @ValidateIf((o) => !!o.panNumber)
   @Matches(/^[A-Z]{5}\d{4}[A-Z]{1}$/, {
     message: 'panNumber must be a valid 10-character PAN',
   })
-  panNumber: string;
+  panNumber?: string;
 
   @ApiProperty({ example: 'DL-MH-654321' })
   @IsString()

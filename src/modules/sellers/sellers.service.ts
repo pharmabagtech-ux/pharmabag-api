@@ -33,22 +33,38 @@ export class SellersService {
       throw new ConflictException('Seller profile already exists');
     }
 
-    // IDFY GST verification — BLOCK on failure (legacy behavior)
+    if (!dto.gstNumber && !dto.panNumber) {
+      throw new BadRequestException(
+        'Either GST number or PAN number is required',
+      );
+    }
+
+    // IDFY verification — BLOCK on failure (legacy behavior).
+    // GST is preferred when supplied; PAN-only sellers verify against PAN.
     let gstPanResponse: any = null;
-    if (this.idfyService.isConfigured() && dto.gstNumber) {
-      const result = await this.idfyService.verifyGst(dto.gstNumber);
-      if (!result.status) {
-        throw new BadRequestException(result.message || 'GST verification failed');
+    if (this.idfyService.isConfigured()) {
+      if (dto.gstNumber) {
+        const result = await this.idfyService.verifyGst(dto.gstNumber);
+        if (!result.status) {
+          throw new BadRequestException(result.message || 'GST verification failed');
+        }
+        gstPanResponse = result;
+      } else if (dto.panNumber) {
+        const result = await this.idfyService.verifyPan(dto.panNumber);
+        if (!result.status) {
+          throw new BadRequestException(result.message || 'PAN verification failed');
+        }
+        gstPanResponse = result;
       }
-      gstPanResponse = result;
     }
 
     const profile = await this.prisma.sellerProfile.create({
       data: {
         userId,
         companyName: dto.companyName,
-        gstNumber: dto.gstNumber,
-        panNumber: dto.panNumber,
+        // Columns are NOT NULL; a seller may supply only one of the two.
+        gstNumber: dto.gstNumber ?? '',
+        panNumber: dto.panNumber ?? '',
         drugLicenseNumber: dto.drugLicenseNumber,
         drugLicenseUrl: dto.drugLicenseUrl,
         drugLicenseExpiry: dto.drugLicenseExpiry ? new Date(dto.drugLicenseExpiry) : null,
