@@ -770,7 +770,17 @@ export class AdminService {
         items: {
           include: {
             product: { select: { id: true, name: true, manufacturer: true, mrp: true } },
-            seller: { select: { id: true, companyName: true } },
+            // Admins need to reach the seller behind each line item, so the
+            // contact number and location come along with the name and id.
+            seller: {
+              select: {
+                id: true,
+                companyName: true,
+                city: true,
+                state: true,
+                user: { select: { phone: true } },
+              },
+            },
           },
         },
         address: true,
