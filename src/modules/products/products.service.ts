@@ -680,32 +680,74 @@ export class ProductsService {
       where.AND = andConditions;
     }
 
-    const [masters, total] = await Promise.all([
-      this.prisma.masterProduct.findMany({
-        where,
-        include: {
-          category: true,
-          subCategory: true,
-          images: { take: 1 },
-          products: {
-            where: { isActive: true, deletedAt: null },
-            select: {
-              mrp: true,
-              gstPercent: true,
-              discountType: true,
-              discountMeta: true,
-              minimumOrderQuantity: true,
-              batches: { select: { stock: true } }
-            },
-            orderBy: { mrp: 'asc' },
-          },
+    const gridInclude = {
+      category: true,
+      subCategory: true,
+      images: { take: 1 },
+      products: {
+        where: { isActive: true, deletedAt: null },
+        select: {
+          mrp: true,
+          gstPercent: true,
+          discountType: true,
+          discountMeta: true,
+          minimumOrderQuantity: true,
+          batches: { select: { stock: true } }
         },
-        orderBy: { [effectiveSortBy]: sortOrder },
-        skip,
-        take: limit,
-      }),
+        orderBy: { mrp: 'asc' as const },
+      },
+    };
+    const gridOrderBy = { [effectiveSortBy]: sortOrder };
+
+    // Products a buyer can actually purchase come first. Most of the catalogue
+    // is admin-uploaded master data with no seller behind it, which shows as
+    // N/A for price, MOQ and rate — those belong after the sellable ones.
+    // Ordering by relation _count would not work: it cannot filter on active
+    // listings, so masters whose only listings are inactive would still rank
+    // first (269 masters have some listing, but only 100 have an active one).
+    const sellable: Prisma.MasterProductWhereInput = {
+      AND: [where, { products: { some: { isActive: true, deletedAt: null } } }],
+    };
+    const unsellable: Prisma.MasterProductWhereInput = {
+      AND: [where, { products: { none: { isActive: true, deletedAt: null } } }],
+    };
+
+    const [sellableTotal, total] = await Promise.all([
+      this.prisma.masterProduct.count({ where: sellable }),
       this.prisma.masterProduct.count({ where }),
     ]);
+
+    let masters: any[];
+
+    if (skip < sellableTotal) {
+      masters = await this.prisma.masterProduct.findMany({
+        where: sellable,
+        include: gridInclude,
+        orderBy: gridOrderBy,
+        skip,
+        take: limit,
+      });
+
+      // This page straddles the boundary — top it up from the catalogue.
+      if (masters.length < limit) {
+        const filler = await this.prisma.masterProduct.findMany({
+          where: unsellable,
+          include: gridInclude,
+          orderBy: gridOrderBy,
+          skip: 0,
+          take: limit - masters.length,
+        });
+        masters = [...masters, ...filler];
+      }
+    } else {
+      masters = await this.prisma.masterProduct.findMany({
+        where: unsellable,
+        include: gridInclude,
+        orderBy: gridOrderBy,
+        skip: skip - sellableTotal,
+        take: limit,
+      });
+    }
 
     return {
       products: masters.map((m) => this.mapMasterToGrid(m)),
