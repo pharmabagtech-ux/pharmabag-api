@@ -820,7 +820,11 @@ export class ProductsService {
       slug: m.slug,
       manufacturer: m.manufacturer,
       chemicalComposition: m.chemicalComposition,
-      mrp: m.mrp,
+      // Prefer the best listing's MRP: `price` is now that listing's net PTR,
+      // so the two must come from the same listing to be comparable. The
+      // master's own mrp is frequently null and would leave the grid with a
+      // net price and nothing to show it against.
+      mrp: best?.mrp ?? m.mrp,
       price: minPrice,
       moq: minMoq,
       // The scheme belongs to the best listing, same source as price and moq.
