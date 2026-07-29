@@ -739,12 +739,7 @@ export class ProductsService {
     }
 
     // 2. Fallback: Check if 'id' is a Master Product (by ID or Slug)
-    const master = await this.prisma.masterProduct.findFirst({
-      where: { 
-        OR: [{ id }, { slug: id }],
-        deletedAt: null 
-      },
-      include: {
+    const masterDetailInclude: Prisma.MasterProductInclude = {
         category: true,
         subCategory: true,
         images: true,
@@ -755,10 +750,30 @@ export class ProductsService {
                 batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
                 images: true,
             },
-            orderBy: [{ mrp: 'asc' }],
+            orderBy: [{ mrp: 'asc' as const }],
         }
+      };
+
+    let master = await this.prisma.masterProduct.findFirst({
+      where: {
+        OR: [{ id }, { slug: id }],
+        deletedAt: null
       },
+      include: masterDetailInclude,
     });
+
+    // 3. Storefront URLs are built from the product NAME alone, but the bulk
+    //    uploader stores slugs as `<name>-<sku>`. Resolve the name-only form
+    //    ("atorva-10mg-tablet") to its stored row ("atorva-10mg-tablet-pb11473").
+    if (!master) {
+      const resolvedSlug = await this.resolveSkuSuffixedSlug(id);
+      if (resolvedSlug) {
+        master = await this.prisma.masterProduct.findFirst({
+          where: { slug: resolvedSlug, deletedAt: null },
+          include: masterDetailInclude,
+        });
+      }
+    }
 
     if (!master) {
         throw new NotFoundException('Product not found');
@@ -805,6 +820,45 @@ export class ProductsService {
       createdAt: m.createdAt,
       updatedAt: m.updatedAt,
     };
+  }
+
+  /**
+   * Storefront product URLs contain only the name-derived slug, while master
+   * product slugs are stored with the SKU appended by the bulk uploader
+   * (generateUniqueSlug). Given "atorva-10mg-tablet", find the row whose slug
+   * is exactly that plus its own SKU, e.g. "atorva-10mg-tablet-pb11473".
+   *
+   * The candidate's slug is rebuilt from its SKU rather than pattern-matched,
+   * so a different product sharing the prefix ("Atorva 10mg Tablet Plus") can
+   * never be returned.
+   */
+  private async resolveSkuSuffixedSlug(slug: string): Promise<string | null> {
+    if (!slug) return null;
+
+    const candidates = await this.prisma.masterProduct.findMany({
+      where: { slug: { startsWith: `${slug}-` }, deletedAt: null },
+      select: { slug: true, sku: true },
+      take: 100,
+    });
+
+    const match = candidates.find(
+      (c) => c.slug === `${slug}-${this.slugifyForMatch(c.sku)}`,
+    );
+
+    return match?.slug ?? null;
+  }
+
+  /** Mirrors the slugify used by the master-product bulk uploader. */
+  private slugifyForMatch(text: string | null | undefined): string {
+    if (!text) return '';
+    return text
+      .toString()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^\w\-]+/g, '')
+      .replace(/\-\-+/g, '-')
+      .replace(/^-+/, '')
+      .replace(/-+$/, '');
   }
 
   private formatMasterDetail(m: any) {
