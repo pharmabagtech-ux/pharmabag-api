@@ -345,8 +345,39 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    // 4. (Optional) Filter items if user is a seller?
-    // In Phase 1, we show the full order but often it's better to show everything for tracking.
+    // 4. A seller may only ever see their OWN line items. Returning the whole
+    //    order leaked other sellers' products, quantities, prices, company
+    //    details and settlement records, and showed order-wide totals against a
+    //    single seller's item. getSellerOrders (list view) already scopes this
+    //    way — the detail view now matches.
+    if (user.role === Role.SELLER && user.sellerProfile) {
+      const sellerId = user.sellerProfile.id;
+      const sellerItems = order.items.filter(
+        (item) => item.sellerId === sellerId,
+      );
+
+      const fallbackGst = 12;
+      const sellerSubtotal = sellerItems.reduce(
+        (sum, item) => sum + item.totalPrice,
+        0,
+      );
+      const sellerGst = sellerItems.reduce((sum, item) => {
+        const gstPercent = (item.product as any)?.gstPercent ?? fallbackGst;
+        return sum + item.totalPrice * (gstPercent / 100);
+      }, 0);
+
+      return {
+        ...order,
+        items: sellerItems,
+        // sellerTotal mirrors getSellerOrders (GST-exclusive, and the basis
+        // settlements are calculated from). Shipping is order-level and not
+        // attributable to one seller, so it is excluded here.
+        sellerTotal: Math.round(sellerSubtotal),
+        totalGstAmount: Math.round(sellerGst),
+        totalAmount: Math.round(sellerSubtotal + sellerGst),
+      };
+    }
+
     return order;
   }
 
