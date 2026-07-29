@@ -810,6 +810,11 @@ export class ProductsService {
       mrp: m.mrp,
       price: minPrice,
       moq: minMoq,
+      // The scheme belongs to the best listing, same source as price and moq.
+      // The query already selects these; they simply were never returned, so
+      // the storefront grid had no scheme to show or carry into the cart.
+      discountType: listings[0]?.discountType ?? null,
+      discountMeta: listings[0]?.discountMeta ?? null,
       bestListingId,
       hasSellers,
       sellerCount: listings.length,
