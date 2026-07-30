@@ -258,6 +258,26 @@ export class MasterProductsBulkService {
         errors.push(...updateResult.errors);
         failCount += updateResult.errors.length;
       }
+
+      // The SKU is the anchor: a correction made against a SKU in the sheet has
+      // to reach every seller listing on that SKU, otherwise the catalogue and
+      // the sellers disagree about what the product is called.
+      const propagated = await this.propagateToSellerListings(
+        toUpdate.map((p) => p.sku),
+      );
+      if (propagated.renamed > 0) {
+        this.logger.log(
+          `Propagated catalogue names to ${propagated.renamed} seller listing(s)`,
+        );
+      }
+      // Surface drastic renames. A spelling fix and "this SKU is now a
+      // different drug" are indistinguishable to the mechanism, and the second
+      // silently relabels a seller's physical stock.
+      for (const w of propagated.suspicious) {
+        errors.push(
+          `WARNING: SKU ${w.sku} renamed a seller listing from "${w.before}" to "${w.after}" — verify this is the same product`,
+        );
+      }
     }
 
     // 7. Bulk Images
@@ -293,6 +313,108 @@ export class MasterProductsBulkService {
     }
 
     return { successCount, failCount, errors };
+  }
+
+  /**
+   * Push catalogue names down onto the seller listings that sit on those SKUs.
+   *
+   * The SKU is the anchor for a product's identity, so correcting a name in the
+   * sheet has to reach the sellers too — otherwise the catalogue says one thing
+   * and every seller listing keeps the old spelling.
+   *
+   * Listings are matched through masterProductId (the real relation) rather than
+   * products.sku, so a listing whose own SKU has drifted is still updated.
+   */
+  private async propagateToSellerListings(
+    skus: string[],
+  ): Promise<{ renamed: number; suspicious: { sku: string; before: string; after: string }[] }> {
+    let renamed = 0;
+    const suspicious: { sku: string; before: string; after: string }[] = [];
+
+    for (const chunk of this.chunkArray(skus, 500)) {
+      // Look first so we can report what changed, and judge whether each rename
+      // is a spelling correction or a different product altogether.
+      const pending = await this.prisma.$queryRaw<
+        { sku: string; before: string; after: string }[]
+      >`
+        SELECT m.sku, p.name AS before, m.name AS after
+        FROM products p
+        JOIN master_products m ON m.id = p."masterProductId"
+        WHERE m.sku = ANY(${chunk})
+          AND p."deletedAt" IS NULL
+          AND p.name IS DISTINCT FROM m.name
+      `;
+
+      for (const row of pending) {
+        if (!this.looksLikeSameProduct(row.before, row.after)) {
+          suspicious.push(row);
+        }
+      }
+
+      // slug mirrors generateSlug() in ProductsService. Deliberately written
+      // without backslash escapes: inside a JS template literal '\s' collapses
+      // to 's', which would make the regex replace the letter s.
+      const affected = await this.prisma.$executeRaw`
+        UPDATE products p
+           SET name = m.name,
+               slug = regexp_replace(
+                        regexp_replace(lower(btrim(m.name)), '[^a-z0-9]+', '-', 'g'),
+                      '(^-|-$)', '', 'g'),
+               manufacturer = coalesce(m.manufacturer, p.manufacturer),
+               "chemicalComposition" = coalesce(m."chemicalComposition", p."chemicalComposition"),
+               "companyId" = coalesce(m."companyId", p."companyId"),
+               "chemicalCompositionId" = coalesce(m."chemicalCompositionId", p."chemicalCompositionId"),
+               "updatedAt" = now()
+        FROM master_products m
+        WHERE p."masterProductId" = m.id
+          AND m.sku = ANY(${chunk})
+          AND p."deletedAt" IS NULL
+          AND p.name IS DISTINCT FROM m.name
+      `;
+      renamed += Number(affected);
+    }
+
+    return { renamed, suspicious };
+  }
+
+  /**
+   * Is `after` plausibly a corrected spelling of `before`, rather than a
+   * different product? Used only to warn — the rename still goes through.
+   */
+  private looksLikeSameProduct(before: string, after: string): boolean {
+    // Dosage forms, pack words and units appear in almost every product name,
+    // so they carry no identity: "AB Flo SR Tablet" and "Irex Tablet" share
+    // "tablet" and are entirely different drugs. Only brand words are compared.
+    const NOISE = new Set([
+      'tablet', 'tablets', 'tab', 'tabs', 'capsule', 'capsules', 'cap', 'caps',
+      'transcaps', 'syrup', 'suspension', 'solution', 'injection', 'inj',
+      'cream', 'ointment', 'gel', 'lotion', 'drops', 'drop', 'respule',
+      'respules', 'sachet', 'powder', 'soap', 'shampoo', 'inhaler', 'rotacap',
+      'lozenges', 'paste', 'vial', 'vials', 'pfs', 'kit', 'oral',
+      'mg', 'ml', 'gm', 'gms', 'mcg', 'iu', 'sr', 'xr', 'cr', 'ds',
+    ]);
+
+    const brandTokens = (s: string) =>
+      new Set(
+        (s || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .split(/\s+/)
+          // drop single characters, pure numbers, dose strings like "200mg"
+          .filter(
+            (t) =>
+              t.length > 1 && !NOISE.has(t) && !/^\d+[a-z]*$/.test(t),
+          ),
+      );
+
+    const a = brandTokens(before);
+    const b = brandTokens(after);
+    // Nothing identifying left on either side — report it rather than assume.
+    if (a.size === 0 || b.size === 0) return false;
+
+    let shared = 0;
+    for (const t of a) if (b.has(t)) shared++;
+    return shared / Math.min(a.size, b.size) >= 0.5;
   }
 
   private async bulkUpdateMasterProducts(toUpdate: any[]): Promise<{ updatedCount: number; errors: string[] }> {
