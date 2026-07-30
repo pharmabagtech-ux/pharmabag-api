@@ -8,6 +8,7 @@ import {
 import { Prisma, ProductApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { calculateNetUnitPrice } from '../../common/pricing/ptr.util';
+import { buildSearchCondition } from './search-condition.util';
 import { InventoryService } from './services/inventory.service';
 import { SearchIndexService } from './services/search-index.service';
 import { AnalyticsService } from './services/analytics.service';
@@ -620,15 +621,8 @@ export class ProductsService {
 
     const andConditions: Prisma.MasterProductWhereInput[] = [];
 
-    if (query.search) {
-      andConditions.push({
-        OR: [
-          { name: { contains: query.search, mode: 'insensitive' } },
-          { manufacturer: { contains: query.search, mode: 'insensitive' } },
-          { chemicalComposition: { contains: query.search, mode: 'insensitive' } },
-        ],
-      });
-    }
+    const searchCondition = buildSearchCondition(query.search);
+    if (searchCondition) andConditions.push(searchCondition);
 
     if (query.categoryId) andConditions.push({ categoryId: query.categoryId });
     if (query.subCategoryId) andConditions.push({ subCategoryId: query.subCategoryId });
