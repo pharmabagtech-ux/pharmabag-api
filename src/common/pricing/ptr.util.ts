@@ -94,6 +94,17 @@ export function calculateNetUnitPrice(
 
   const meta = discountMeta ?? {};
 
+  // A fixed price replaces the PTR outright - it is not a reduction of it.
+  // The seller portal treats it the same way (finalPtr = specialPrice), and it
+  // is GST-exclusive, so tax is added downstream exactly as for every other
+  // type. Without this the buyer would be charged the plain PTR and the
+  // seller's price would be silently ignored.
+  if (discountType === 'SPECIAL_PRICE') {
+    const special = meta.specialPrice;
+    if (typeof special === 'number' && special > 0) return round2(special);
+    return ptr;
+  }
+
   const appliesDiscount =
     discountType === 'PTR_DISCOUNT' ||
     discountType === 'PTR_PLUS_SAME_PRODUCT_BONUS' ||

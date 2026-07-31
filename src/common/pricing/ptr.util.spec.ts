@@ -97,4 +97,41 @@ describe('PTR pricing', () => {
     expect(net).not.toBeNull();
     expect(net!).toBeLessThan(800);
   });
+
+  describe('SPECIAL_PRICE', () => {
+    it('charges the fixed price, not the PTR', () => {
+      // 700 @ 12% would otherwise be PTR 499.31. The seller asked for 650, and
+      // that is what the buyer must be billed - the seller portal shows exactly
+      // this as "Final PTR 650.00".
+      expect(calculateNetUnitPrice(700, 12, 'SPECIAL_PRICE', { specialPrice: 650 })).toBe(650);
+    });
+
+    it('is GST-exclusive like every other type', () => {
+      // Tax is added downstream; 650 + 12% = 728.00, the figure the preview shows.
+      const net = calculateNetUnitPrice(700, 12, 'SPECIAL_PRICE', { specialPrice: 650 })!;
+      expect(Math.round(net * 1.12 * 100) / 100).toBe(728);
+    });
+
+    it('ignores discountPercent and buy/get, which do not apply to a fixed price', () => {
+      expect(
+        calculateNetUnitPrice(700, 12, 'SPECIAL_PRICE', {
+          specialPrice: 650,
+          discountPercent: 10,
+          buy: 7,
+          get: 5,
+        }),
+      ).toBe(650);
+    });
+
+    it('falls back to PTR when the fixed price is missing or nonsense', () => {
+      const ptr = calculateNetUnitPrice(700, 12, 'PTR_DISCOUNT', { discountPercent: 0 });
+      expect(calculateNetUnitPrice(700, 12, 'SPECIAL_PRICE', {})).toBe(ptr);
+      expect(calculateNetUnitPrice(700, 12, 'SPECIAL_PRICE', { specialPrice: 0 })).toBe(ptr);
+      expect(calculateNetUnitPrice(700, 12, 'SPECIAL_PRICE', { specialPrice: -5 })).toBe(ptr);
+    });
+
+    it('rounds to paise', () => {
+      expect(calculateNetUnitPrice(700, 12, 'SPECIAL_PRICE', { specialPrice: 650.567 })).toBe(650.57);
+    });
+  });
 });
