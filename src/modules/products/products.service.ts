@@ -863,6 +863,11 @@ export class ProductsService {
       mrp: best?.mrp ?? m.mrp,
       price: minPrice,
       moq: minMoq,
+      // Same omission as the scheme below: selected for the price calculation
+      // but never returned, so the storefront had no GST slab to carry into the
+      // cart. The bag then fell back to 12% while checkout charged the
+      // listing's real rate - 5% on almost every listing in the catalogue.
+      gstPercent: best?.gstPercent ?? m.gstPercent ?? null,
       // The scheme belongs to the best listing, same source as price and moq.
       // The query already selects these; they simply were never returned, so
       // the storefront grid had no scheme to show or carry into the cart.
