@@ -813,6 +813,21 @@ export class ProductsService {
       }
     }
 
+    // 4. Links built before fix(buyer) 0975cc7 hyphenated punctuation
+    //    ("0.5mg" -> "0-5mg") instead of deleting it like the bulk uploader
+    //    does ("05mg"), so they never satisfy the startsWith check above.
+    //    Recreate that legacy, name-only slug and match on it directly, so
+    //    old, shared, or bookmarked links still resolve.
+    if (!master) {
+      const legacySlug = await this.resolveLegacyPunctuationSlug(id);
+      if (legacySlug) {
+        master = await this.prisma.masterProduct.findFirst({
+          where: { slug: legacySlug, deletedAt: null },
+          include: masterDetailInclude,
+        });
+      }
+    }
+
     if (!master) {
         throw new NotFoundException('Product not found');
     }
@@ -922,6 +937,41 @@ export class ProductsService {
       .replace(/\-\-+/g, '-')
       .replace(/^-+/, '')
       .replace(/-+$/, '');
+  }
+
+  /**
+   * Given a name-only slug that may have been built by the web's slug
+   * generator before fix(buyer) 0975cc7 — which turned every run of
+   * non-alphanumerics into a hyphen instead of deleting it — find the
+   * catalogue row whose name reproduces that exact legacy slug.
+   *
+   * Matched by exact reconstruction, not a loose scan: if more than one
+   * product's name happens to collapse to the same legacy slug, returning
+   * either would risk showing the wrong drug, so neither is returned.
+   */
+  private async resolveLegacyPunctuationSlug(slug: string): Promise<string | null> {
+    if (!slug) return null;
+
+    const candidates = await this.prisma.masterProduct.findMany({
+      where: { deletedAt: null },
+      select: { slug: true, name: true },
+    });
+
+    const matches = candidates.filter(
+      (c) => this.legacySlugify(c.name) === slug,
+    );
+
+    return matches.length === 1 ? matches[0].slug : null;
+  }
+
+  /** Mirrors generateProductSlug in the web app prior to fix(buyer) 0975cc7. */
+  private legacySlugify(text: string | null | undefined): string {
+    if (!text) return '';
+    return text
+      .toString()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '');
   }
 
   private formatMasterDetail(m: any) {
