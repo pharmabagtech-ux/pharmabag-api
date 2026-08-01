@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { calculateNetUnitPrice } from '../../common/pricing/ptr.util';
+import { checkMinimumOrderValue } from '../../common/pricing/min-order.util';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 
@@ -122,7 +123,22 @@ export class CartService {
         (product as any).discountMeta,
       ) ?? product.mrp;
 
-    // 9. Create cart item
+    // 9. Enforce the minimum order value.
+    //    The check above it only compares against the stored
+    //    minimumOrderQuantity, which is stale on almost every listing — saved
+    //    before the current pricing rules, and asking for roughly half the
+    //    floor. This is the rule itself: GST-inclusive, per line.
+    const minOrderError = checkMinimumOrderValue(
+      unitPrice,
+      quantity,
+      (product as any).gstPercent,
+      (product as any).discountMeta,
+    );
+    if (minOrderError) {
+      throw new BadRequestException(minOrderError);
+    }
+
+    // 10. Create cart item
     const cartItem = await this.prisma.cartItem.create({
       data: {
         cartId: cart.id,
@@ -276,7 +292,19 @@ export class CartService {
       );
     }
 
-    // 6. Update quantity
+    // 6. Enforce the minimum order value, against the price snapshotted when
+    //    the item was added — that is what the buyer will be charged.
+    const minOrderError = checkMinimumOrderValue(
+      cartItem.unitPrice,
+      quantity,
+      (cartItem.product as any).gstPercent,
+      (cartItem.product as any).discountMeta,
+    );
+    if (minOrderError) {
+      throw new BadRequestException(minOrderError);
+    }
+
+    // 7. Update quantity
     const updated = await this.prisma.cartItem.update({
       where: { id: cartItemId },
       data: { quantity },

@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { checkMinimumOrderValue } from '../../common/pricing/min-order.util';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrderStatus, Role, PaymentStatus } from '@prisma/client';
@@ -108,6 +109,19 @@ export class OrdersService {
         throw new BadRequestException(
           `Insufficient stock for "${product.name}". Only ${totalStock} units available.`,
         );
+      }
+
+      // The last gate on the minimum order value. The cart already refuses a
+      // short line, but an order placed from a cart built before that check
+      // existed would otherwise still go through.
+      const minOrderError = checkMinimumOrderValue(
+        item.unitPrice,
+        item.quantity,
+        (product as any).gstPercent ?? 12,
+        (product as any).discountMeta,
+      );
+      if (minOrderError) {
+        throw new BadRequestException(`"${product.name}": ${minOrderError}`);
       }
     }
 
