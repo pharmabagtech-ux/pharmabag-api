@@ -9,6 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrderStatus, Role, PaymentStatus } from '@prisma/client';
+import { calculateSettlement } from '../../common/settlements/settlement.util';
 
 @Injectable()
 export class OrdersService {
@@ -582,7 +583,9 @@ export class OrdersService {
         items: {
           include: {
             product: {
-              select: { id: true, name: true },
+              // gstPercent: settlements pay the seller the tax, so the real
+              // slab must be loaded or calculateSettlement falls back to 12%.
+              select: { id: true, name: true, gstPercent: true },
             },
           },
         },
@@ -597,12 +600,15 @@ export class OrdersService {
           where: { orderItemId: item.id },
         });
         if (!existing) {
-          const commission = +(item.totalPrice * 0.05).toFixed(2);
+          const { amount, commission } = calculateSettlement({
+            totalPrice: item.totalPrice,
+            gstPercent: (item as any).product?.gstPercent,
+          });
           await this.prisma.sellerSettlement.create({
             data: {
               sellerId: item.sellerId,
               orderItemId: item.id,
-              amount: +(item.totalPrice - commission).toFixed(2),
+              amount,
               commission,
               payoutStatus: 'PENDING',
             },

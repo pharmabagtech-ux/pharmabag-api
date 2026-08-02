@@ -13,6 +13,7 @@ import {
   PaymentVerificationStatus,
   OrderStatus,
 } from '@prisma/client';
+import { calculateSettlement } from '../../common/settlements/settlement.util';
 
 @Injectable()
 export class PaymentsService {
@@ -210,7 +211,16 @@ export class PaymentsService {
       include: {
         order: {
           include: {
-            items: { select: { id: true, sellerId: true, totalPrice: true } },
+            items: {
+                select: {
+                  id: true,
+                  sellerId: true,
+                  totalPrice: true,
+                  // Settlements pay the seller the GST they will remit,
+                  // so the real slab must be loaded here.
+                  product: { select: { gstPercent: true } },
+                },
+              },
           },
         },
       },
@@ -350,7 +360,13 @@ export class PaymentsService {
 
   private async createSettlements(
     tx: any,
-    items: { id: string; sellerId: string; totalPrice: number }[],
+    // gstPercent comes through so the seller is paid the tax they will remit.
+    items: {
+      id: string;
+      sellerId: string;
+      totalPrice: number;
+      product?: { gstPercent?: number | null } | null;
+    }[],
   ) {
     for (const item of items) {
       // Skip if settlement already exists for this order item
@@ -359,8 +375,10 @@ export class PaymentsService {
       });
       if (existing) continue;
 
-      const commission = +(item.totalPrice * this.commissionRate).toFixed(2);
-      const sellerAmount = +(item.totalPrice - commission).toFixed(2);
+      const { amount: sellerAmount, commission } = calculateSettlement({
+        totalPrice: item.totalPrice,
+        gstPercent: item.product?.gstPercent,
+      });
 
       await tx.sellerSettlement.create({
         data: {
