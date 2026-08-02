@@ -415,6 +415,10 @@ export class OrdersService {
             name: true,
             manufacturer: true,
             mrp: true,
+            // Needed to total an order the way the buyer sees it. Without it
+            // this list could only ever report a GST-exclusive figure, which
+            // is why the seller portal disagreed with the buyer's total.
+            gstPercent: true,
             images: { select: { url: true }, take: 1 },
           },
         },
@@ -443,8 +447,16 @@ export class OrdersService {
         address: any;
         items: any[];
         sellerTotal: number;
+        totalGstAmount: number;
+        totalAmount: number;
       }
     >();
+
+    /**
+     * Same fallback the buyer's checkout uses, so a product with no slab set
+     * is taxed identically on both sides rather than silently untaxed here.
+     */
+    const fallbackGst = 12;
 
     for (const item of orderItems) {
       const key = item.order.id;
@@ -457,20 +469,47 @@ export class OrdersService {
           address: item.order.address,
           items: [],
           sellerTotal: 0,
+          totalGstAmount: 0,
+          totalAmount: 0,
         });
       }
       const entry = ordersMap.get(key)!;
+      const gstPercent = (item.product as any)?.gstPercent ?? fallbackGst;
       entry.items.push({
         id: item.id,
         product: item.product,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         totalPrice: item.totalPrice,
+        gstPercent,
+        // Per-item GST, so the seller can reconcile a line the same way the
+        // buyer's bag breakdown does.
+        gstAmount: item.totalPrice * (gstPercent / 100),
       });
       entry.sellerTotal += item.totalPrice;
+      entry.totalGstAmount += item.totalPrice * (gstPercent / 100);
     }
 
-    return Array.from(ordersMap.values());
+    /**
+     * Round once at the end, over the raw sums -- the order `checkout` does it
+     * in. Rounding per item first can land a rupee away from what the buyer
+     * was actually charged.
+     *
+     * `sellerTotal` stays GST-EXCLUSIVE because it is the settlement basis
+     * (commission is 5% of goods value). `totalAmount` is the GST-INCLUSIVE
+     * figure the buyer actually paid for this seller's items, and is what the
+     * portal should lead with.
+     */
+    return Array.from(ordersMap.values()).map((entry) => {
+      const sellerTotal = Math.round(entry.sellerTotal);
+      const totalGstAmount = Math.round(entry.totalGstAmount);
+      return {
+        ...entry,
+        sellerTotal,
+        totalGstAmount,
+        totalAmount: sellerTotal + totalGstAmount,
+      };
+    });
   }
 
   // ──────────────────────────────────────────────
