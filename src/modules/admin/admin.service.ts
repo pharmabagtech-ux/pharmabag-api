@@ -23,6 +23,7 @@ import { AdminQueryProductsDto } from './dto/query-products.dto';
 import { AdminQueryOrdersDto } from './dto/query-orders.dto';
 import { AdminQueryPaymentsDto } from './dto/query-payments.dto';
 import { AdminQuerySettlementsDto } from './dto/query-settlements.dto';
+import { calculateSettlement } from '../../common/settlements/settlement.util';
 import { AdminQueryTicketsDto } from './dto/query-tickets.dto';
 import { AdminUpdateOrderStatusDto } from './dto/admin-update-order-status.dto';
 import { AdminUpdateTicketStatusDto } from './dto/admin-update-ticket-status.dto';
@@ -817,7 +818,8 @@ export class AdminService {
         buyer: { select: { phone: true, buyerProfile: { select: { legalName: true } } } },
         items: {
           include: {
-            product: { select: { name: true } },
+            // gstPercent: settlements pay the seller the tax they remit.
+            product: { select: { name: true, gstPercent: true } },
             seller: { select: { companyName: true } },
           },
         },
@@ -831,12 +833,15 @@ export class AdminService {
           where: { orderItemId: item.id },
         });
         if (!existing) {
-          const commission = +(item.totalPrice * 0.05).toFixed(2);
+          const { amount, commission } = calculateSettlement({
+            totalPrice: item.totalPrice,
+            gstPercent: (item as any).product?.gstPercent,
+          });
           await this.prisma.sellerSettlement.create({
             data: {
               sellerId: item.sellerId,
               orderItemId: item.id,
-              amount: +(item.totalPrice - commission).toFixed(2),
+              amount,
               commission,
               payoutStatus: 'PENDING',
             },
@@ -899,7 +904,16 @@ export class AdminService {
       include: {
         order: {
           include: {
-            items: { select: { id: true, sellerId: true, totalPrice: true } },
+            items: {
+                select: {
+                  id: true,
+                  sellerId: true,
+                  totalPrice: true,
+                  // Settlements pay the seller the GST they will remit,
+                  // so the real slab must be loaded here.
+                  product: { select: { gstPercent: true } },
+                },
+              },
           },
         },
       },
@@ -958,12 +972,15 @@ export class AdminService {
             where: { orderItemId: item.id },
           });
           if (!existing) {
-            const commission = +(item.totalPrice * 0.05).toFixed(2);
+            const { amount, commission } = calculateSettlement({
+              totalPrice: item.totalPrice,
+              gstPercent: (item as any).product?.gstPercent,
+            });
             await tx.sellerSettlement.create({
               data: {
                 sellerId: item.sellerId,
                 orderItemId: item.id,
-                amount: +(item.totalPrice - commission).toFixed(2),
+                amount,
                 commission,
                 payoutStatus: 'PENDING',
               },
@@ -1116,8 +1133,18 @@ export class AdminService {
     const orders = await this.prisma.order.findMany({
       where: {
         orderStatus: OrderStatus.DELIVERED,
+        /**
+         * The buyer must have PAID, not merely received the goods.
+         *
+         * This filter was missing, so the admin "Paid" button could settle a
+         * seller for an order the buyer had not paid for - money out before
+         * money in. Every other settlement path already required both
+         * conditions; this one did not.
+         */
+        paymentStatus: PaymentStatus.SUCCESS,
       },
-      include: { items: true },
+      // gstPercent is needed because the seller is paid the tax too.
+      include: { items: { include: { product: { select: { gstPercent: true } } } } },
     });
 
     let createdCount = 0;
@@ -1128,12 +1155,20 @@ export class AdminService {
         });
 
         if (!existing) {
-          const commission = 0;
+          /**
+           * Was `commission = 0` and `amount = item.totalPrice`, which both
+           * waived the platform's 5% and paid the seller a GST-exclusive
+           * figure. Now identical to every other settlement path.
+           */
+          const { amount, commission } = calculateSettlement({
+            totalPrice: item.totalPrice,
+            gstPercent: (item as any).product?.gstPercent,
+          });
           await this.prisma.sellerSettlement.create({
             data: {
               sellerId: item.sellerId,
               orderItemId: item.id,
-              amount: item.totalPrice,
+              amount,
               commission,
               payoutStatus: 'PENDING',
             },
