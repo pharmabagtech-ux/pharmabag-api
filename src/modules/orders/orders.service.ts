@@ -35,6 +35,8 @@ export class OrdersService {
                     id: true,
                     verificationStatus: true,
                     companyName: true,
+                    // read by the vacation guard below
+                    isVacation: true,
                   },
                 },
                 batches: {
@@ -101,6 +103,18 @@ export class OrdersService {
       if (product.seller.verificationStatus !== 'VERIFIED') {
         throw new BadRequestException(
           `Seller for "${product.name}" is not verified. Please remove it from your cart.`,
+        );
+      }
+
+      /**
+       * A seller can go on vacation while an item is already sitting in a bag.
+       * Filtering the storefront is not enough on its own - without this the
+       * order would still go through and the seller, who was told their store
+       * was hidden, would owe stock they are not there to ship.
+       */
+      if ((product.seller as any).isVacation) {
+        throw new BadRequestException(
+          `Seller for "${product.name}" is currently unavailable. Please remove it from your cart.`,
         );
       }
 
