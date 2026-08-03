@@ -7,6 +7,13 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { ACTIVE_LISTING } from '../../common/products/active-listing';
 import { calculateNetUnitPrice } from '../../common/pricing/ptr.util';
+import {
+  effectiveMinimumQuantity,
+  lineValueWithGst,
+  listingLotSize,
+  meetsMinimumOrderValue,
+  minimumOrderMessage,
+} from '../../common/orders/minimum-order.util';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 
@@ -69,10 +76,49 @@ export class CartService {
       throw new BadRequestException('This product\'s seller is not verified');
     }
 
-    // 3. Validate minimum order quantity
-    if (quantity < product.minimumOrderQuantity) {
+    // 3. Snapshot the unit price the buyer actually pays.
+    //    A retailer pays PTR less any scheme discount — not the printed MRP.
+    //    GST is added later from the listing's own gstPercent, so this stays
+    //    GST-exclusive. Falls back to MRP if the price cannot be derived.
+    //
+    //    Derived here rather than just before the write, because the Rs 20,000
+    //    minimum below is a rule about VALUE and cannot be checked without it.
+    const unitPrice =
+      calculateNetUnitPrice(
+        product.mrp,
+        (product as any).gstPercent,
+        (product as any).discountType,
+        (product as any).discountMeta,
+      ) ?? product.mrp;
+
+    // 4. Validate minimum order quantity.
+    //
+    //    `product.minimumOrderQuantity` alone is not enough: it is the
+    //    seller's stored figure, written when the listing was created and
+    //    never recomputed, and around a hundred live listings carry a value
+    //    below what the Rs 20,000 rule now requires. Taking the higher of the
+    //    two enforces the platform floor without overriding a seller who
+    //    legitimately demands more.
+    const gstPercent = (product as any).gstPercent;
+    const requiredQuantity = effectiveMinimumQuantity(
+      unitPrice,
+      gstPercent,
+      product.minimumOrderQuantity,
+      listingLotSize((product as any).discountType, (product as any).discountMeta),
+    );
+
+    if (quantity < requiredQuantity) {
+      if (!meetsMinimumOrderValue(quantity, unitPrice, gstPercent)) {
+        throw new BadRequestException(
+          minimumOrderMessage(
+            product.name,
+            requiredQuantity,
+            lineValueWithGst(quantity, unitPrice, gstPercent),
+          ),
+        );
+      }
       throw new BadRequestException(
-        `Minimum order quantity for this product is ${product.minimumOrderQuantity}`,
+        `Minimum order quantity for this product is ${requiredQuantity}`,
       );
     }
 
@@ -114,19 +160,7 @@ export class CartService {
       );
     }
 
-    // 8. Snapshot the unit price the buyer actually pays.
-    //    A retailer pays PTR less any scheme discount — not the printed MRP.
-    //    GST is added later from the listing's own gstPercent, so this stays
-    //    GST-exclusive. Falls back to MRP if the price cannot be derived.
-    const unitPrice =
-      calculateNetUnitPrice(
-        product.mrp,
-        (product as any).gstPercent,
-        (product as any).discountType,
-        (product as any).discountMeta,
-      ) ?? product.mrp;
-
-    // 9. Create cart item
+    // 9. Create cart item (unitPrice was snapshotted at step 3)
     const cartItem = await this.prisma.cartItem.create({
       data: {
         cartId: cart.id,
@@ -258,10 +292,33 @@ export class CartService {
       throw new BadRequestException('This product is no longer available');
     }
 
-    // 3. Validate minimum order quantity
-    if (quantity < cartItem.product.minimumOrderQuantity) {
+    // 3. Validate minimum order quantity — Rs 20,000 floor or the seller's own
+    //    stored minimum, whichever is higher. Measured against the price
+    //    already snapshotted on the cart item, which is what this line will be
+    //    billed at, rather than a freshly derived one.
+    const gstPercent = (cartItem.product as any).gstPercent;
+    const requiredQuantity = effectiveMinimumQuantity(
+      cartItem.unitPrice,
+      gstPercent,
+      cartItem.product.minimumOrderQuantity,
+      listingLotSize(
+        (cartItem.product as any).discountType,
+        (cartItem.product as any).discountMeta,
+      ),
+    );
+
+    if (quantity < requiredQuantity) {
+      if (!meetsMinimumOrderValue(quantity, cartItem.unitPrice, gstPercent)) {
+        throw new BadRequestException(
+          minimumOrderMessage(
+            cartItem.product.name,
+            requiredQuantity,
+            lineValueWithGst(quantity, cartItem.unitPrice, gstPercent),
+          ),
+        );
+      }
       throw new BadRequestException(
-        `Minimum order quantity for this product is ${cartItem.product.minimumOrderQuantity}`,
+        `Minimum order quantity for this product is ${requiredQuantity}`,
       );
     }
 

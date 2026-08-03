@@ -10,6 +10,13 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrderStatus, Role, PaymentStatus } from '@prisma/client';
 import { calculateSettlement } from '../../common/settlements/settlement.util';
+import {
+  effectiveMinimumQuantity,
+  lineValueWithGst,
+  listingLotSize,
+  meetsMinimumOrderValue,
+  minimumOrderMessage,
+} from '../../common/orders/minimum-order.util';
 
 @Injectable()
 export class OrdersService {
@@ -122,6 +129,45 @@ export class OrdersService {
       if (item.quantity > totalStock) {
         throw new BadRequestException(
           `Insufficient stock for "${product.name}". Only ${totalStock} units available.`,
+        );
+      }
+
+      /**
+       * The Rs 20,000 minimum, per line and GST-inclusive.
+       *
+       * This is the gate that matters. The storefront has always enforced it,
+       * but nothing here did, so any order reaching this method by another
+       * route was accepted short. Checked against the item's own stored
+       * `unitPrice` and the LISTING's gstPercent - the figures the invoice is
+       * about to be built from four lines below - so this can never reject an
+       * order at a price different from the one being charged.
+       */
+      const gstPercent = (product as any).gstPercent;
+      const lot = listingLotSize(
+        (product as any).discountType,
+        (product as any).discountMeta,
+      );
+      const required = effectiveMinimumQuantity(
+        item.unitPrice,
+        gstPercent,
+        product.minimumOrderQuantity,
+        lot,
+      );
+
+      if (item.quantity < required) {
+        // Say which rule bound. A buyer told they are short of Rs 20,000 when
+        // in fact the seller demands more than that has no way to act on it.
+        if (!meetsMinimumOrderValue(item.quantity, item.unitPrice, gstPercent)) {
+          throw new BadRequestException(
+            minimumOrderMessage(
+              product.name,
+              required,
+              lineValueWithGst(item.quantity, item.unitPrice, gstPercent),
+            ),
+          );
+        }
+        throw new BadRequestException(
+          `Minimum order quantity for "${product.name}" is ${required} units.`,
         );
       }
     }
