@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, ProductApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { ACTIVE_LISTING } from '../../common/products/active-listing';
 import { calculateNetUnitPrice } from '../../common/pricing/ptr.util';
 import { buildSearchCondition } from './search-condition.util';
 import { InventoryService } from './services/inventory.service';
@@ -639,8 +640,7 @@ export class ProductsService {
       andConditions.push({
         products: {
           some: {
-            isActive: true,
-            deletedAt: null,
+            ...ACTIVE_LISTING,
             createdAt: { gte: thirtyDaysAgo },
           },
         },
@@ -649,7 +649,7 @@ export class ProductsService {
 
     // Combine filters that target the underlying seller products
     const productConditions: Prisma.ProductWhereInput[] = [
-      { isActive: true, deletedAt: null }
+      ACTIVE_LISTING
     ];
 
     if (query.isDiscounted) {
@@ -679,7 +679,7 @@ export class ProductsService {
       subCategory: true,
       images: { take: 1 },
       products: {
-        where: { isActive: true, deletedAt: null },
+        where: ACTIVE_LISTING,
         select: {
           mrp: true,
           gstPercent: true,
@@ -700,10 +700,10 @@ export class ProductsService {
     // listings, so masters whose only listings are inactive would still rank
     // first (269 masters have some listing, but only 100 have an active one).
     const sellable: Prisma.MasterProductWhereInput = {
-      AND: [where, { products: { some: { isActive: true, deletedAt: null } } }],
+      AND: [where, { products: { some: ACTIVE_LISTING } }],
     };
     const unsellable: Prisma.MasterProductWhereInput = {
-      AND: [where, { products: { none: { isActive: true, deletedAt: null } } }],
+      AND: [where, { products: { none: ACTIVE_LISTING } }],
     };
 
     const [sellableTotal, total] = await Promise.all([
@@ -782,7 +782,7 @@ export class ProductsService {
         subCategory: true,
         images: true,
         products: {
-            where: { isActive: true, deletedAt: null },
+            where: ACTIVE_LISTING,
             include: {
                 seller: { select: { id: true, companyName: true, rating: true, city: true, state: true } },
                 batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },

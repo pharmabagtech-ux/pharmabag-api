@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { ACTIVE_LISTING } from '../../common/products/active-listing';
 import { calculateNetUnitPrice } from '../../common/pricing/ptr.util';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
@@ -25,7 +26,7 @@ export class CartService {
 
     // 1. Validate product exists, is active, and not soft-deleted
     let product = await this.prisma.product.findFirst({
-      where: { id: productId, isActive: true, deletedAt: null },
+      where: { id: productId, ...ACTIVE_LISTING },
       include: {
         seller: { select: { id: true, verificationStatus: true } },
         batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
@@ -35,10 +36,13 @@ export class CartService {
     if (!product) {
       // Check if it's a MasterProduct ID
       const masterProduct = await this.prisma.masterProduct.findFirst({
+        // catalogue row, not a seller listing - no vacation condition here.
+        // The vacation rule is applied to its `products` below, which is what
+        // actually gets added to the bag.
         where: { id: productId, isActive: true, deletedAt: null },
         include: {
           products: {
-            where: { isActive: true, deletedAt: null },
+            where: ACTIVE_LISTING,
             include: {
               seller: { select: { id: true, verificationStatus: true } },
               batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
