@@ -86,10 +86,14 @@ export class BuyersController {
   async getAllBuyers(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('verificationStatus') verificationStatus?: string,
+    @Query('creditTier') creditTier?: string,
   ) {
     const data = await this.buyersService.getAllBuyers(
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
+      { search, verificationStatus, creditTier },
     );
     return { message: 'Buyers retrieved successfully', data };
   }
