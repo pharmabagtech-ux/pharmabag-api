@@ -5,6 +5,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import { Prisma, VerificationStatus, CreditTier } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { IdfyService } from '../verification/idfy.service';
 import { CreateBuyerProfileDto } from './dto/create-buyer-profile.dto';
@@ -247,11 +248,50 @@ export class BuyersService {
   /**
    * Get all buyer profiles (for admin).
    */
-  async getAllBuyers(page = 1, limit = 20) {
+  async getAllBuyers(
+    page = 1,
+    limit = 20,
+    filters: { search?: string; verificationStatus?: string; creditTier?: string } = {},
+  ) {
     const skip = (page - 1) * limit;
+    const { search, verificationStatus, creditTier } = filters;
+
+    // Without these the admin list could only ever be narrowed in the browser,
+    // which reaches one page of buyers at a time while the pager keeps counting
+    // all of them — so a search for a phone number that belonged to someone on a
+    // later page came back empty. Phone and email live on the related user, not
+    // on the profile; legalName is the profile's own name.
+    const where: Prisma.BuyerProfileWhereInput = {};
+
+    if (search) {
+      where.OR = [
+        { legalName: { contains: search, mode: 'insensitive' } },
+        { gstNumber: { contains: search, mode: 'insensitive' } },
+        { panNumber: { contains: search, mode: 'insensitive' } },
+        { user: { phone: { contains: search, mode: 'insensitive' } } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    if (
+      verificationStatus &&
+      ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'].includes(verificationStatus.toUpperCase())
+    ) {
+      where.verificationStatus = verificationStatus.toUpperCase() as VerificationStatus;
+    }
+
+    // "none" is the admin's own bucket for a buyer who has not been given a tier.
+    if (creditTier) {
+      const tier = creditTier.toUpperCase();
+      if (tier === 'NONE') where.creditTier = null;
+      else if (['PREPAID', 'EMI', 'FULLCREDIT'].includes(tier)) {
+        where.creditTier = tier as CreditTier;
+      }
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.buyerProfile.findMany({
+        where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
@@ -261,7 +301,7 @@ export class BuyersService {
           },
         },
       }),
-      this.prisma.buyerProfile.count(),
+      this.prisma.buyerProfile.count({ where }),
     ]);
 
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
