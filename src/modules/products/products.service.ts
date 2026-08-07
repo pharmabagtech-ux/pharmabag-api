@@ -838,22 +838,39 @@ export class ProductsService {
     return this.formatMasterDetail(master);
   }
 
+  /**
+   * Sorts listings by NET price (post-discount) ascending, cheapest first.
+   *
+   * The DB query orders by `mrp` alone, which several sellers of the same
+   * master product routinely tie on — the printed MRP rarely varies, only
+   * the scheme discount does. A tied `orderBy` clause falls back to
+   * whatever order Postgres happens to return, which is not price order.
+   * Live data caught this directly: four listings tied on MRP 252.60 ended
+   * up with the MOST expensive one (Rs 169.36, a 12% discount) ranked
+   * ahead of three cheaper ones (as low as Rs 150.12, a 22% discount) —
+   * exactly backwards for a "best offer" a buyer would expect first.
+   *
+   * Re-sorted here, in application code, because the net price depends on
+   * `discountMeta` (buy/get/discountPercent/specialPrice), which cannot be
+   * expressed as a plain SQL `ORDER BY`.
+   */
+  private rankListingsByNetPrice(listings: any[]): any[] {
+    return listings
+      .map((l) => ({
+        ...l,
+        netPrice: calculateNetUnitPrice(l.mrp, l.gstPercent, l.discountType, l.discountMeta) ?? l.mrp,
+      }))
+      .sort((a, b) => a.netPrice - b.netPrice);
+  }
+
   private mapMasterToGrid(m: any) {
-    const listings = m.products || [];
+    const listings = this.rankListingsByNetPrice(m.products || []);
     const best = listings[0];
     // Grid price is what the buyer will actually be charged (PTR less any
     // scheme discount, GST-exclusive) — not the printed MRP.
-    const minPrice =
-      listings.length > 0
-        ? calculateNetUnitPrice(
-            best.mrp,
-            best.gstPercent,
-            best.discountType,
-            best.discountMeta,
-          ) ?? best.mrp
-        : m.mrp;
-    const minMoq = listings.length > 0 ? (listings[0].minimumOrderQuantity || 1) : 1;
-    const bestListingId = listings.length > 0 ? listings[0].id : null;
+    const minPrice = listings.length > 0 ? best.netPrice : m.mrp;
+    const minMoq = listings.length > 0 ? (best.minimumOrderQuantity || 1) : 1;
+    const bestListingId = listings.length > 0 ? best.id : null;
     const hasSellers = listings.length > 0;
 
     let totalStock = 0;
@@ -886,8 +903,8 @@ export class ProductsService {
       // The scheme belongs to the best listing, same source as price and moq.
       // The query already selects these; they simply were never returned, so
       // the storefront grid had no scheme to show or carry into the cart.
-      discountType: listings[0]?.discountType ?? null,
-      discountMeta: listings[0]?.discountMeta ?? null,
+      discountType: best?.discountType ?? null,
+      discountMeta: best?.discountMeta ?? null,
       bestListingId,
       hasSellers,
       sellerCount: listings.length,
@@ -993,15 +1010,15 @@ export class ProductsService {
       safetyAdvice: m.safetyAdvice,
       packSize: m.packSize,
       storageAndHandling: m.storageAndHandling,
-      // Group seller listings
-      listings: (m.products || []).map((p: any) => {
+      // Group seller listings, cheapest net price first (see
+      // rankListingsByNetPrice — the DB's `orderBy: mrp` ties whenever
+      // sellers share a printed MRP and only their discount differs).
+      listings: this.rankListingsByNetPrice(m.products || []).map((p: any) => {
           const batches = p.batches || [];
           const stock = batches.reduce((sum: number, b: any) => sum + b.stock, 0);
           // A retailer pays PTR less any scheme discount, not the printed MRP.
           // `price` is GST-exclusive, matching what the cart will charge.
-          const netUnitPrice =
-            calculateNetUnitPrice(p.mrp, p.gstPercent, p.discountType, p.discountMeta) ??
-            p.mrp;
+          const netUnitPrice = p.netPrice;
           return {
               id: p.id,
               price: netUnitPrice,

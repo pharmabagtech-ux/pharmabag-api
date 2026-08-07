@@ -292,13 +292,30 @@ export class CartService {
       throw new BadRequestException('This product is no longer available');
     }
 
-    // 3. Validate minimum order quantity — Rs 20,000 floor or the seller's own
-    //    stored minimum, whichever is higher. Measured against the price
-    //    already snapshotted on the cart item, which is what this line will be
-    //    billed at, rather than a freshly derived one.
+    // 3. Refresh the unit price from the LIVE listing before validating.
+    //
+    //    `cartItem.unitPrice` is a snapshot taken whenever the row was first
+    //    created (add-to-cart, or an earlier sync). If the seller has since
+    //    changed the listing's discount or MRP, that snapshot goes stale, but
+    //    nothing ever touched it again - the storefront elsewhere always shows
+    //    the live price, so a stale snapshot here means the bag on screen and
+    //    the check the buyer hits can quote two different totals for the same
+    //    quantity of the same product. Re-deriving it here, the same way
+    //    addToCart does, keeps validation, the persisted row and the eventual
+    //    checkout bill all in agreement.
+    const unitPrice =
+      calculateNetUnitPrice(
+        cartItem.product.mrp,
+        (cartItem.product as any).gstPercent,
+        (cartItem.product as any).discountType,
+        (cartItem.product as any).discountMeta,
+      ) ?? cartItem.product.mrp;
+
+    // 4. Validate minimum order quantity — Rs 20,000 floor or the seller's own
+    //    stored minimum, whichever is higher.
     const gstPercent = (cartItem.product as any).gstPercent;
     const requiredQuantity = effectiveMinimumQuantity(
-      cartItem.unitPrice,
+      unitPrice,
       gstPercent,
       cartItem.product.minimumOrderQuantity,
       listingLotSize(
@@ -308,12 +325,12 @@ export class CartService {
     );
 
     if (quantity < requiredQuantity) {
-      if (!meetsMinimumOrderValue(quantity, cartItem.unitPrice, gstPercent)) {
+      if (!meetsMinimumOrderValue(quantity, unitPrice, gstPercent)) {
         throw new BadRequestException(
           minimumOrderMessage(
             cartItem.product.name,
             requiredQuantity,
-            lineValueWithGst(quantity, cartItem.unitPrice, gstPercent),
+            lineValueWithGst(quantity, unitPrice, gstPercent),
           ),
         );
       }
@@ -322,14 +339,14 @@ export class CartService {
       );
     }
 
-    // 4. Validate maximum order quantity
+    // 5. Validate maximum order quantity
     if (cartItem.product.maximumOrderQuantity && quantity > cartItem.product.maximumOrderQuantity) {
       throw new BadRequestException(
         `Maximum order quantity for this product is ${cartItem.product.maximumOrderQuantity}`,
       );
     }
 
-    // 5. Validate stock
+    // 6. Validate stock
     const totalStock = cartItem.product.batches.reduce((sum, b) => sum + b.stock, 0);
     if (quantity > totalStock) {
       throw new BadRequestException(
@@ -337,10 +354,12 @@ export class CartService {
       );
     }
 
-    // 6. Update quantity
+    // 7. Update quantity AND the refreshed price, so what gets billed at
+    //    checkout (which reads this same unitPrice column) matches what was
+    //    just validated above.
     const updated = await this.prisma.cartItem.update({
       where: { id: cartItemId },
-      data: { quantity },
+      data: { quantity, unitPrice },
       include: {
         product: {
           select: {
