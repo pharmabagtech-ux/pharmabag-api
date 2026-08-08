@@ -16,9 +16,11 @@ import {
   ProductApprovalStatus,
   TicketStatus,
   Prisma,
+  VerificationStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { QueryUsersDto } from './dto/query-users.dto';
+import { QuerySellersDto } from './dto/query-sellers.dto';
 import { AdminQueryProductsDto } from './dto/query-products.dto';
 import { AdminQueryOrdersDto } from './dto/query-orders.dto';
 import { AdminQueryPaymentsDto } from './dto/query-payments.dto';
@@ -295,6 +297,60 @@ export class AdminService {
 
     this.logger.log(`User ${userId} updated by admin`);
     return this.getUserById(userId);
+  }
+
+  /**
+   * The sellers list behind the User Management page's vacation chip.
+   *
+   * The panel has always called `GET /admin/users/sellers`, but no such route
+   * existed — the path matched `users/:id` with id "sellers" and failed UUID
+   * validation, the frontend swallowed the error into an empty list, and the
+   * vacation count read 0 regardless of the data. Mirrors `getAllBuyers`
+   * (the buyers list had the identical dead-route defect, fixed earlier):
+   * filters live in the query and `count` shares the `where`.
+   */
+  async getAllSellers(query: QuerySellersDto) {
+    const { search, status, isVacation, page = 1, limit = 20 } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.SellerProfileWhereInput = {};
+
+    if (search) {
+      where.OR = [
+        { companyName: { contains: search, mode: 'insensitive' } },
+        { gstNumber: { contains: search, mode: 'insensitive' } },
+        { panNumber: { contains: search, mode: 'insensitive' } },
+        { user: { phone: { contains: search, mode: 'insensitive' } } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    if (
+      status &&
+      ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'].includes(status.toUpperCase())
+    ) {
+      where.verificationStatus = status.toUpperCase() as VerificationStatus;
+    }
+
+    if (isVacation === 'true') where.isVacation = true;
+    else if (isVacation === 'false') where.isVacation = false;
+
+    const [data, total] = await Promise.all([
+      this.prisma.sellerProfile.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          user: {
+            select: { id: true, phone: true, email: true, status: true, createdAt: true },
+          },
+        },
+      }),
+      this.prisma.sellerProfile.count({ where }),
+    ]);
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async getPendingUsers() {
