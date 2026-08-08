@@ -21,6 +21,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AdminService } from './admin.service';
 import { QueryUsersDto } from './dto/query-users.dto';
+import { QuerySellersDto } from './dto/query-sellers.dto';
 import { AdminQueryProductsDto } from './dto/query-products.dto';
 import { AdminQueryOrdersDto } from './dto/query-orders.dto';
 import { AdminQueryPaymentsDto } from './dto/query-payments.dto';
@@ -78,6 +79,20 @@ export class AdminController {
   async getPendingUsers() {
     const data = await this.adminService.getPendingUsers();
     return { message: 'Pending users retrieved successfully', data };
+  }
+
+  /**
+   * Declared BEFORE `users/:id`, or "sellers" is read as a user id and fails
+   * UUID validation — which is exactly the dead route the admin panel had
+   * been calling since it was built.
+   */
+  @Get('users/sellers')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'List seller profiles (paginated; filter by search/status/vacation)' })
+  @ApiResponse({ status: 200, description: 'Paginated sellers list returned' })
+  async getAllSellers(@Query() query: QuerySellersDto) {
+    const data = await this.adminService.getAllSellers(query);
+    return { message: 'Sellers retrieved successfully', data };
   }
 
   @Get('users/:id')
