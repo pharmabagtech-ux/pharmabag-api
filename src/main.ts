@@ -3,6 +3,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger as PinoLogger } from 'nestjs-pino';
+import compression from 'compression';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
@@ -15,6 +16,10 @@ async function bootstrap() {
 
   // Use Pino structured logger
   app.useLogger(app.get(PinoLogger));
+
+  // Gzip/deflate every response above ~1KB — JSON payloads (catalogue,
+  // manufacturer lists) were going out uncompressed.
+  app.use(compression());
 
   // Global validation pipe
   app.useGlobalPipes(
