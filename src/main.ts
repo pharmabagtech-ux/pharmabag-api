@@ -17,6 +17,15 @@ async function bootstrap() {
   // Use Pino structured logger
   app.useLogger(app.get(PinoLogger));
 
+  // There's no ALB in front of the box anymore — TLS is terminated by a local
+  // reverse proxy (nginx) — so without this every request arrives with the
+  // same loopback req.ip. The global ThrottlerGuard keys its 100req/60s
+  // budget off req.ip, so that collapsed the whole site's traffic onto one
+  // shared bucket: real visitors got sporadic 429s on totally unrelated
+  // pages once anyone else's traffic used it up. Trusting the first proxy
+  // hop restores per-visitor IPs from X-Forwarded-For.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   // Gzip/deflate every response above ~1KB — JSON payloads (catalogue,
   // manufacturer lists) were going out uncompressed.
   app.use(compression());
