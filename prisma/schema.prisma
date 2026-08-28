@@ -899,26 +899,30 @@ model WebVisitor {
 }
 
 model WebSession {
-  id           String   @id
-  visitorId    String
-  userId       String?
-  startedAt    DateTime @default(now())
-  lastEventAt  DateTime @default(now())
-  entryPage    String?
-  exitPage     String?
-  pageviews    Int      @default(0)
-  events       Int      @default(0)
-  source       String?
-  medium       String?
-  campaign     String?
-  referrer     String?
-  clickIds     Json?
-  userAgent    String?
-  isNewVisitor Boolean  @default(false)
-  isBot        Boolean  @default(false)
+  id             String   @id
+  visitorId      String
+  userId         String?
+  startedAt      DateTime @default(now())
+  lastEventAt    DateTime @default(now())
+  entryPage      String?
+  exitPage       String?
+  pageviews      Int      @default(0)
+  events         Int      @default(0)
+  source         String?
+  medium         String?
+  campaign       String?
+  referrer       String?
+  clickIds       Json?
+  userAgent      String?
+  isNewVisitor   Boolean  @default(false)
+  isBot          Boolean  @default(false)
+  sourceCategory String?
+  referrerDomain String?
 
   @@index([visitorId])
   @@index([lastEventAt])
+  @@index([sourceCategory, startedAt])
+  @@index([referrerDomain])
   @@map("analytics_sessions")
 }
 
