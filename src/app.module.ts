@@ -31,6 +31,7 @@ import { MigrationModule } from './modules/migration/migration.module';
 import { VerificationModule } from './modules/verification/verification.module';
 import { ReferralModule } from './modules/referrals/referral.module';
 import { CustomOrdersModule } from './modules/custom-orders/custom-orders.module';
+import { WebAnalyticsModule } from './modules/web-analytics/web-analytics.module';
 
 @Module({
   imports: [
@@ -107,6 +108,7 @@ import { CustomOrdersModule } from './modules/custom-orders/custom-orders.module
     VerificationModule,
     ReferralModule,
     CustomOrdersModule,
+    WebAnalyticsModule,
   ],
   providers: [
     // Apply throttler guard globally
