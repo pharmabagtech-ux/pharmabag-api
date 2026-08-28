@@ -244,3 +244,80 @@ describe('WebAnalyticsService.ingest', () => {
     );
   });
 });
+
+describe('WebAnalyticsService.realtime', () => {
+  function buildRealtimeService() {
+    const prisma: any = {
+      webSession: {
+        groupBy: jest.fn().mockResolvedValue([{ visitorId: 'v1' }, { visitorId: 'v2' }]),
+      },
+      webEvent: {
+        findMany: jest.fn().mockResolvedValue([
+          { name: 'page_view', ts: new Date(), page: '/products/foo', productId: null },
+        ]),
+      },
+      $queryRaw: jest.fn().mockResolvedValue([{ page: '/products/foo', visitors: BigInt(2) }]),
+    };
+    const service = new WebAnalyticsService(prisma);
+    return { service, prisma };
+  }
+
+  it('returns active visitor count from distinct visitorIds with a recent, non-bot session', async () => {
+    const { service, prisma } = buildRealtimeService();
+
+    const result = await service.realtime();
+
+    expect(prisma.webSession.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['visitorId'],
+        where: expect.objectContaining({ isBot: false }),
+      }),
+    );
+    expect(result.activeVisitors).toBe(2);
+  });
+
+  it('converts the raw-SQL bigint visitor counts to plain numbers for top pages', async () => {
+    const { service } = buildRealtimeService();
+
+    const result = await service.realtime();
+
+    expect(result.topPages).toEqual([{ page: '/products/foo', visitors: 2 }]);
+    expect(typeof result.topPages[0].visitors).toBe('number');
+  });
+
+  it('returns the recent events feed, most recent first, bot-filtered', async () => {
+    const { service, prisma } = buildRealtimeService();
+
+    const result = await service.realtime();
+
+    expect(prisma.webEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ isBot: false }) }),
+    );
+    expect(result.recentEvents).toHaveLength(1);
+    expect(result.recentEvents[0].page).toBe('/products/foo');
+  });
+
+  it('degrades gracefully when the raw top-pages query fails, without losing the other panels', async () => {
+    const { service, prisma } = buildRealtimeService();
+    prisma.$queryRaw.mockRejectedValue(new Error('boom'));
+
+    const result = await service.realtime();
+
+    expect(result.topPages).toEqual([]);
+    expect(result.activeVisitors).toBe(2);
+    expect(result.recentEvents).toHaveLength(1);
+  });
+
+  it('queries the correct table and columns', async () => {
+    const { service, prisma } = buildRealtimeService();
+
+    await service.realtime();
+
+    const sqlCall = (prisma.$queryRaw as jest.Mock).mock.calls[0][0];
+    const sqlText = Array.isArray(sqlCall?.strings) ? sqlCall.strings.join('') : String(sqlCall);
+    expect(sqlText).toContain('"analytics_events"');
+    expect(sqlText).toContain('"visitorId"');
+    expect(sqlText).toContain('"page"');
+    expect(sqlText).toContain('"isBot"');
+  });
+});

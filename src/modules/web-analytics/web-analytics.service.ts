@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CollectBatchDto } from './dto/collect-batch.dto';
@@ -6,6 +6,8 @@ import { isBotUserAgent } from './bot-detector';
 
 @Injectable()
 export class WebAnalyticsService {
+  private readonly logger = new Logger(WebAnalyticsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   // Known limitation, accepted deliberately: concurrent flushes for the same
@@ -97,5 +99,41 @@ export class WebAnalyticsService {
         });
       }
     });
+  }
+
+  async realtime() {
+    const since = new Date(Date.now() - 5 * 60 * 1000);
+
+    const [active, rawPages, recent] = await Promise.all([
+      this.prisma.webSession.groupBy({
+        by: ['visitorId'],
+        where: { lastEventAt: { gte: since }, isBot: false },
+      }),
+      this.prisma
+        .$queryRaw<Array<{ page: string; visitors: bigint }>>(
+          Prisma.sql`
+        SELECT e."page", COUNT(DISTINCT e."visitorId") AS visitors
+        FROM "analytics_events" e
+        WHERE e."ts" >= ${since} AND e."page" IS NOT NULL AND e."isBot" = false
+        GROUP BY e."page" ORDER BY visitors DESC LIMIT 10
+      `,
+        )
+        .catch((err) => {
+          this.logger.error('realtime: top-pages query failed', err);
+          return [] as Array<{ page: string; visitors: bigint }>;
+        }),
+      this.prisma.webEvent.findMany({
+        where: { ts: { gte: since }, isBot: false },
+        orderBy: { ts: 'desc' },
+        take: 30,
+        select: { name: true, ts: true, page: true, productId: true },
+      }),
+    ]);
+
+    // Postgres COUNT(...) comes back as a bigint via node-postgres/Prisma,
+    // which JSON.stringify cannot serialize — convert before returning.
+    const topPages = rawPages.map((row) => ({ page: row.page, visitors: Number(row.visitors) }));
+
+    return { activeVisitors: active.length, topPages, recentEvents: recent };
   }
 }
