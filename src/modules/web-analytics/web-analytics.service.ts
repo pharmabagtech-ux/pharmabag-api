@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CollectBatchDto } from './dto/collect-batch.dto';
 import { isBotUserAgent } from './bot-detector';
+import { classifySource } from './source-classifier';
 
 @Injectable()
 export class WebAnalyticsService {
@@ -53,6 +54,12 @@ export class WebAnalyticsService {
       }
 
       if (!existingSession) {
+        const classified = classifySource({
+          referrer: batch.session.referrer,
+          utmSource: batch.session.source,
+          utmMedium: batch.session.medium,
+          clickIds: batch.session.clickIds,
+        });
         await tx.webSession.create({
           data: {
             id: batch.session.id,
@@ -69,6 +76,8 @@ export class WebAnalyticsService {
             userAgent: batch.ua,
             isNewVisitor: !existingVisitor,
             isBot,
+            sourceCategory: classified.category,
+            referrerDomain: classified.referrerDomain,
           },
         });
       } else {
