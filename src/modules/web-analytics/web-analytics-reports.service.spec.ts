@@ -48,6 +48,10 @@ describe('WebAnalyticsReportsService.traffic', () => {
     const result = await service.traffic(range);
 
     expect(result.daily).toEqual([{ date: '2026-08-02', visitors: 3, sessions: 4 }]);
+
+    const dailySql: any = prisma.$queryRaw.mock.calls[2][0];
+    const dailySqlText = Array.isArray(dailySql?.strings) ? dailySql.strings.join('') : String(dailySql);
+    expect(dailySqlText).toContain("AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata'");
   });
 
   it('degrades gracefully when the daily-series query fails, without losing the KPIs', async () => {
@@ -95,5 +99,20 @@ describe('WebAnalyticsReportsService.traffic', () => {
     const sqlText = Array.isArray(referrersSql?.strings) ? referrersSql.strings.join('') : String(referrersSql);
     expect(sqlText).toContain('"isBot" = false');
     expect(sqlText).toContain('LIMIT 20');
+  });
+
+  it('degrades to null previous-period KPIs without losing current KPIs or other panels', async () => {
+    const { service, prisma } = buildService();
+    prisma.$queryRaw
+      .mockResolvedValueOnce([{ visitors: BigInt(5), newVisitors: BigInt(2), sessions: BigInt(6), pageviews: BigInt(20) }])
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const result = await service.traffic(range);
+
+    expect(result.previous).toBeNull();
+    expect(result.current.visitors).toBe(5);
   });
 });

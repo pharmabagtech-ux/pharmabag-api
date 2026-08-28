@@ -32,7 +32,10 @@ export class WebAnalyticsReportsService {
   async traffic(range: TrafficRange) {
     const [current, previous, daily, channels, referrers] = await Promise.all([
       this.kpis(range),
-      this.kpis(previousPeriod(range)),
+      this.kpis(previousPeriod(range)).catch((err) => {
+        this.logger.error('traffic: previous-period KPI query failed', err);
+        return null;
+      }),
       this.dailySeries(range),
       this.channels(range),
       this.referrers(range),
@@ -69,13 +72,13 @@ export class WebAnalyticsReportsService {
   private dailySeries({ from, to }: TrafficRange) {
     return this.prisma
       .$queryRaw<Array<{ date: Date; visitors: bigint; sessions: bigint }>>(Prisma.sql`
-        SELECT date_trunc('day', s."startedAt") AS date,
+        SELECT date_trunc('day', s."startedAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') AS date,
                COUNT(DISTINCT s."visitorId") AS visitors,
                COUNT(*) AS sessions
         FROM "analytics_sessions" s
         WHERE s."startedAt" >= ${from} AND s."startedAt" < ${to} AND s."isBot" = false
-        GROUP BY date_trunc('day', s."startedAt")
-        ORDER BY date_trunc('day', s."startedAt") ASC
+        GROUP BY date_trunc('day', s."startedAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')
+        ORDER BY date_trunc('day', s."startedAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') ASC
       `)
       .then((rows) =>
         rows.map((r) => ({
