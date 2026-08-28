@@ -31,6 +31,10 @@ describe('classifySource', () => {
 
     { name: 'Google search', input: { referrer: 'https://www.google.com/' }, source: 'Google', category: 'ORGANIC_SEARCH', level: 'REFERRER' },
     { name: 'Google India', input: { referrer: 'https://www.google.co.in/url' }, source: 'Google', category: 'ORGANIC_SEARCH', level: 'REFERRER' },
+    { name: 'Gmail webmail (must not be shadowed by generic Google rule)', input: { referrer: 'https://mail.google.com/mail/u/0/' }, source: 'Email (webmail)', category: 'EMAIL', level: 'REFERRER' },
+    { name: 'Yahoo webmail (must not be shadowed by generic Yahoo rule)', input: { referrer: 'https://mail.yahoo.com/d/folders/1' }, source: 'Email (webmail)', category: 'EMAIL', level: 'REFERRER' },
+    { name: 'Outlook webmail', input: { referrer: 'https://outlook.live.com/mail/0/' }, source: 'Email (webmail)', category: 'EMAIL', level: 'REFERRER' },
+    { name: 'Google ccTLD still matches after bounding the suffix', input: { referrer: 'https://www.google.co.in/url' }, source: 'Google', category: 'ORGANIC_SEARCH', level: 'REFERRER' },
     { name: 'Bing', input: { referrer: 'https://www.bing.com/search' }, source: 'Bing', category: 'ORGANIC_SEARCH', level: 'REFERRER' },
     { name: 'DuckDuckGo', input: { referrer: 'https://duckduckgo.com/' }, source: 'DuckDuckGo', category: 'ORGANIC_SEARCH', level: 'REFERRER' },
 

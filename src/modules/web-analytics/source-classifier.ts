@@ -51,9 +51,12 @@ interface DomainRule {
   category: SourceCategory;
 }
 
-// Order matters: first match wins. AI assistants sit above generic search
-// (gemini.google.com must not fall through to Google Search).
+// Order matters: first match wins. Email webmail takes priority (must not be shadowed by generic
+// Google/Yahoo rules). AI assistants sit above generic search (gemini.google.com must not fall
+// through to Google Search).
 const DOMAIN_RULES: DomainRule[] = [
+  { match: /^mail\.google\.com$|(^|\.)outlook\.(com|live\.com)$|^mail\.yahoo\.com$/, source: 'Email (webmail)', category: 'EMAIL' },
+
   { match: /(^|\.)chatgpt\.com$|(^|\.)chat\.openai\.com$/, source: 'ChatGPT', category: 'AI' },
   { match: /(^|\.)openai\.com$/, source: 'OpenAI', category: 'AI' },
   { match: /^gemini\.google\.com$|^bard\.google\.com$|^aistudio\.google\.com$/, source: 'Google Gemini', category: 'AI' },
@@ -68,7 +71,7 @@ const DOMAIN_RULES: DomainRule[] = [
   { match: /(^|\.)grok\.com$|^grok\.x\.com$/, source: 'Grok', category: 'AI' },
   { match: /(^|\.)deepseek\.com$/, source: 'DeepSeek', category: 'AI' },
 
-  { match: /(^|\.)google\.[a-z.]+$/, source: 'Google', category: 'ORGANIC_SEARCH' },
+  { match: /(^|\.)google\.[a-z.]{1,8}$/, source: 'Google', category: 'ORGANIC_SEARCH' },
   { match: /(^|\.)bing\.com$/, source: 'Bing', category: 'ORGANIC_SEARCH' },
   { match: /(^|\.)duckduckgo\.com$/, source: 'DuckDuckGo', category: 'ORGANIC_SEARCH' },
   { match: /(^|\.)search\.yahoo\.com$|(^|\.)yahoo\.com$/, source: 'Yahoo', category: 'ORGANIC_SEARCH' },
@@ -92,8 +95,6 @@ const DOMAIN_RULES: DomainRule[] = [
 
   { match: /(^|\.)whatsapp\.com$|^wa\.me$|^web\.whatsapp\.com$/, source: 'WhatsApp', category: 'MESSAGING' },
   { match: /(^|\.)telegram\.(org|me)$|^t\.me$|^web\.telegram\.org$/, source: 'Telegram', category: 'MESSAGING' },
-
-  { match: /^mail\.google\.com$|(^|\.)outlook\.(com|live\.com)$|^mail\.yahoo\.com$/, source: 'Email (webmail)', category: 'EMAIL' },
 ];
 
 const UTM_SOURCE_MAP: Record<string, { source: string; category: SourceCategory }> = {
