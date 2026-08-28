@@ -243,6 +243,41 @@ describe('WebAnalyticsService.ingest', () => {
       }),
     );
   });
+
+  it('classifies and stamps sourceCategory/referrerDomain on session creation', async () => {
+    const { service, tx } = buildService();
+
+    await service.ingest(
+      batch({
+        session: {
+          id: 'session-1',
+          landingPage: '/products/foo',
+          referrer: 'https://www.google.com/',
+        } as any,
+      }),
+    );
+
+    expect(tx.webSession.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceCategory: 'ORGANIC_SEARCH',
+          referrerDomain: 'google.com',
+        }),
+      }),
+    );
+  });
+
+  it('does not recompute sourceCategory/referrerDomain on session update (attribution fixed at session start)', async () => {
+    const { service, tx } = buildService();
+    tx.webVisitor.findUnique.mockResolvedValue({ id: 'visitor-1' });
+    tx.webSession.findUnique.mockResolvedValue({ id: 'session-1' });
+
+    await service.ingest(batch());
+
+    const updateCall = tx.webSession.update.mock.calls[0][0];
+    expect(updateCall.data).not.toHaveProperty('sourceCategory');
+    expect(updateCall.data).not.toHaveProperty('referrerDomain');
+  });
 });
 
 describe('WebAnalyticsService.realtime', () => {
