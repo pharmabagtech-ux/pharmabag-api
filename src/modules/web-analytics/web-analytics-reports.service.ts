@@ -7,7 +7,7 @@ export interface TrafficRange {
   to: Date;
 }
 
-interface TrafficKpis {
+export interface TrafficKpis {
   visitors: number;
   newVisitors: number;
   sessions: number;
@@ -29,7 +29,15 @@ export class WebAnalyticsReportsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async traffic(range: TrafficRange) {
+  async traffic(
+    range: TrafficRange,
+  ): Promise<{
+    current: TrafficKpis;
+    previous: TrafficKpis | null;
+    daily: Array<{ date: string; visitors: number; sessions: number }>;
+    channels: Array<{ category: string; visitors: number; sessions: number }>;
+    referrers: Array<{ domain: string; visitors: number; sessions: number }>;
+  }> {
     const [current, previous, daily, channels, referrers] = await Promise.all([
       this.kpis(range),
       this.kpis(previousPeriod(range)).catch((err) => {
