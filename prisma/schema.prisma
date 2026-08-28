@@ -878,3 +878,63 @@ enum ProductRequestStatus {
   APPROVED
   REJECTED
 }
+
+model WebVisitor {
+  id             String   @id
+  createdAt      DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+  userId         String?
+  firstSource    String?
+  firstMedium    String?
+  firstCampaign  String?
+  firstReferrer  String?
+  firstLanding   String?
+  sessionsCount  Int      @default(0)
+  pageviewsCount Int      @default(0)
+  isBot          Boolean  @default(false)
+
+  @@index([lastSeenAt])
+  @@index([userId])
+  @@map("analytics_visitors")
+}
+
+model WebSession {
+  id           String   @id
+  visitorId    String
+  userId       String?
+  startedAt    DateTime @default(now())
+  lastEventAt  DateTime @default(now())
+  entryPage    String?
+  exitPage     String?
+  pageviews    Int      @default(0)
+  events       Int      @default(0)
+  source       String?
+  medium       String?
+  campaign     String?
+  referrer     String?
+  clickIds     Json?
+  userAgent    String?
+  isNewVisitor Boolean  @default(false)
+  isBot        Boolean  @default(false)
+
+  @@index([visitorId])
+  @@index([lastEventAt])
+  @@map("analytics_sessions")
+}
+
+model WebEvent {
+  id        String   @id @default(uuid())
+  visitorId String
+  sessionId String?
+  name      String
+  ts        DateTime @default(now())
+  page      String?
+  productId String?
+  props     Json?
+  isBot     Boolean  @default(false)
+
+  @@index([ts])
+  @@index([name, ts])
+  @@index([visitorId, ts])
+  @@map("analytics_events")
+}
