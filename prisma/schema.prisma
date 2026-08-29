@@ -948,3 +948,15 @@ model WebEvent {
   @@index([visitorId, ts])
   @@map("analytics_events")
 }
+
+/// Single-row site-wide settings (id is always "site"). Stored as validated
+/// JSON rather than one column per key so adding a setting is a DTO change,
+/// not a migration. Written only by the admin site-settings endpoint, read
+/// (whitelisted) by the buyer storefront at render time.
+model SiteSetting {
+  id        String   @id
+  data      Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  @@map("site_settings")
+}
