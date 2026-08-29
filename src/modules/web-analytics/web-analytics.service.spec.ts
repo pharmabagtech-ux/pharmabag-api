@@ -278,6 +278,39 @@ describe('WebAnalyticsService.ingest', () => {
     expect(updateCall.data).not.toHaveProperty('sourceCategory');
     expect(updateCall.data).not.toHaveProperty('referrerDomain');
   });
+
+  it('parses and stamps deviceType/os/browser on session creation', async () => {
+    const { service, tx } = buildService();
+
+    await service.ingest(
+      batch({
+        ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      }),
+    );
+
+    expect(tx.webSession.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          deviceType: 'desktop',
+          os: 'Windows',
+          browser: 'Chrome',
+        }),
+      }),
+    );
+  });
+
+  it('does not recompute deviceType/os/browser on session update (device is fixed at session start)', async () => {
+    const { service, tx } = buildService();
+    tx.webVisitor.findUnique.mockResolvedValue({ id: 'visitor-1' });
+    tx.webSession.findUnique.mockResolvedValue({ id: 'session-1' });
+
+    await service.ingest(batch());
+
+    const updateCall = tx.webSession.update.mock.calls[0][0];
+    expect(updateCall.data).not.toHaveProperty('deviceType');
+    expect(updateCall.data).not.toHaveProperty('os');
+    expect(updateCall.data).not.toHaveProperty('browser');
+  });
 });
 
 describe('WebAnalyticsService.realtime', () => {

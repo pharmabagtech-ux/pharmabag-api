@@ -4,6 +4,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { CollectBatchDto } from './dto/collect-batch.dto';
 import { isBotUserAgent } from './bot-detector';
 import { classifySource } from './source-classifier';
+import { parseDeviceOsBrowser } from './ua-parser';
 
 @Injectable()
 export class WebAnalyticsService {
@@ -60,6 +61,7 @@ export class WebAnalyticsService {
           utmMedium: batch.session.medium,
           clickIds: batch.session.clickIds,
         });
+        const ua = parseDeviceOsBrowser(batch.ua);
         await tx.webSession.create({
           data: {
             id: batch.session.id,
@@ -78,6 +80,9 @@ export class WebAnalyticsService {
             isBot,
             sourceCategory: classified.category,
             referrerDomain: classified.referrerDomain,
+            deviceType: ua.deviceType,
+            os: ua.os,
+            browser: ua.browser,
           },
         });
       } else {
