@@ -200,4 +200,17 @@ describe('WebAnalyticsReportsService.audience', () => {
     expect(sqlText).not.toContain('"isBot" = false');
     expect(sqlText).toContain('FILTER (WHERE s."isBot")');
   });
+
+  it('does not throw and treats a malformed engagedMs value as 0 in the SQL guard', async () => {
+    const { service, prisma } = buildService();
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    await service.audience(range);
+
+    const qualitySql: any = prisma.$queryRaw.mock.calls[3][0];
+    const sqlText = Array.isArray(qualitySql?.strings) ? qualitySql.strings.join('') : String(qualitySql);
+    expect(sqlText).toContain("~ '^[0-9]+(\\.[0-9]+)?$'");
+    expect(sqlText).toContain('THEN (e."props"->>\'engagedMs\')::numeric');
+    expect(sqlText).toContain('ELSE 0');
+  });
 });

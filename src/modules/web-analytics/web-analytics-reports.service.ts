@@ -224,9 +224,15 @@ export class WebAnalyticsReportsService {
   private async quality({ from, to }: TrafficRange) {
     const rows = await this.prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
       WITH engagement AS (
-        SELECT e."sessionId", SUM((e."props"->>'engagedMs')::numeric) AS "engagedMs"
+        SELECT e."sessionId",
+               SUM(
+                 CASE
+                   WHEN e."props"->>'engagedMs' ~ '^[0-9]+(\\.[0-9]+)?$' THEN (e."props"->>'engagedMs')::numeric
+                   ELSE 0
+                 END
+               ) AS "engagedMs"
         FROM "analytics_events" e
-        WHERE e."name" = 'page_engagement' AND NOT e."isBot"
+        WHERE e."name" = 'page_engagement' AND NOT e."isBot" AND e."ts" >= ${from} AND e."ts" < ${to}
         GROUP BY e."sessionId"
       )
       SELECT
