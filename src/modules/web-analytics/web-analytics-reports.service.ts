@@ -138,4 +138,115 @@ export class WebAnalyticsReportsService {
         return [] as Array<{ domain: string; visitors: number; sessions: number }>;
       });
   }
+
+  async audience(range: TrafficRange): Promise<{
+    devices: Array<{ deviceType: string; visitors: number; sessions: number }>;
+    os: Array<{ os: string; visitors: number; sessions: number }>;
+    browsers: Array<{ browser: string; visitors: number; sessions: number }>;
+    quality: {
+      totalSessions: number;
+      botSessions: number;
+      humanSessions: number;
+      lowEngagementSessions: number;
+      lowEngagementPct: number;
+    };
+  }> {
+    const [devices, os, browsers, quality] = await Promise.all([
+      this.devices(range),
+      this.osBreakdown(range),
+      this.browsers(range),
+      this.quality(range),
+    ]);
+    return { devices, os, browsers, quality };
+  }
+
+  private devices({ from, to }: TrafficRange) {
+    return this.prisma
+      .$queryRaw<Array<{ deviceType: string | null; visitors: bigint; sessions: bigint }>>(Prisma.sql`
+        SELECT COALESCE(s."deviceType", 'Unknown') AS "deviceType",
+               COUNT(DISTINCT s."visitorId") AS visitors,
+               COUNT(*) AS sessions
+        FROM "analytics_sessions" s
+        WHERE s."startedAt" >= ${from} AND s."startedAt" < ${to} AND s."isBot" = false
+        GROUP BY COALESCE(s."deviceType", 'Unknown')
+        ORDER BY sessions DESC
+      `)
+      .then((rows) => rows.map((r) => ({ deviceType: r.deviceType ?? 'Unknown', visitors: toNumber(r.visitors), sessions: toNumber(r.sessions) })))
+      .catch((err) => {
+        this.logger.error('audience: devices query failed', err);
+        return [] as Array<{ deviceType: string; visitors: number; sessions: number }>;
+      });
+  }
+
+  private osBreakdown({ from, to }: TrafficRange) {
+    return this.prisma
+      .$queryRaw<Array<{ os: string | null; visitors: bigint; sessions: bigint }>>(Prisma.sql`
+        SELECT COALESCE(s."os", 'Unknown') AS os,
+               COUNT(DISTINCT s."visitorId") AS visitors,
+               COUNT(*) AS sessions
+        FROM "analytics_sessions" s
+        WHERE s."startedAt" >= ${from} AND s."startedAt" < ${to} AND s."isBot" = false
+        GROUP BY COALESCE(s."os", 'Unknown')
+        ORDER BY sessions DESC
+      `)
+      .then((rows) => rows.map((r) => ({ os: r.os ?? 'Unknown', visitors: toNumber(r.visitors), sessions: toNumber(r.sessions) })))
+      .catch((err) => {
+        this.logger.error('audience: os query failed', err);
+        return [] as Array<{ os: string; visitors: number; sessions: number }>;
+      });
+  }
+
+  private browsers({ from, to }: TrafficRange) {
+    return this.prisma
+      .$queryRaw<Array<{ browser: string | null; visitors: bigint; sessions: bigint }>>(Prisma.sql`
+        SELECT COALESCE(s."browser", 'Unknown') AS browser,
+               COUNT(DISTINCT s."visitorId") AS visitors,
+               COUNT(*) AS sessions
+        FROM "analytics_sessions" s
+        WHERE s."startedAt" >= ${from} AND s."startedAt" < ${to} AND s."isBot" = false
+        GROUP BY COALESCE(s."browser", 'Unknown')
+        ORDER BY sessions DESC
+      `)
+      .then((rows) => rows.map((r) => ({ browser: r.browser ?? 'Unknown', visitors: toNumber(r.visitors), sessions: toNumber(r.sessions) })))
+      .catch((err) => {
+        this.logger.error('audience: browsers query failed', err);
+        return [] as Array<{ browser: string; visitors: number; sessions: number }>;
+      });
+  }
+
+  // The headline number on this page — deliberately NOT wrapped in .catch(),
+  // same reasoning as traffic()'s current-period KPIs: a genuine failure
+  // here should surface as a real 500, not silently render as "all clean".
+  //
+  // Deliberately does NOT filter isBot in the base WHERE clause — this
+  // query needs to see both bot and human sessions to report totals for
+  // each, unlike every other query on this page which filters bots out.
+  private async quality({ from, to }: TrafficRange) {
+    const rows = await this.prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+      WITH engagement AS (
+        SELECT e."sessionId", SUM((e."props"->>'engagedMs')::numeric) AS "engagedMs"
+        FROM "analytics_events" e
+        WHERE e."name" = 'page_engagement' AND NOT e."isBot"
+        GROUP BY e."sessionId"
+      )
+      SELECT
+        COUNT(*) AS "totalSessions",
+        COUNT(*) FILTER (WHERE s."isBot") AS "botSessions",
+        COUNT(*) FILTER (WHERE NOT s."isBot") AS "humanSessions",
+        COUNT(*) FILTER (WHERE NOT s."isBot" AND COALESCE(en."engagedMs", 0) < 5000) AS "lowEngagementSessions"
+      FROM "analytics_sessions" s
+      LEFT JOIN engagement en ON en."sessionId" = s."id"
+      WHERE s."startedAt" >= ${from} AND s."startedAt" < ${to}
+    `);
+    const row = rows[0] ?? {};
+    const humanSessions = toNumber(row.humanSessions);
+    const lowEngagementSessions = toNumber(row.lowEngagementSessions);
+    return {
+      totalSessions: toNumber(row.totalSessions),
+      botSessions: toNumber(row.botSessions),
+      humanSessions,
+      lowEngagementSessions,
+      lowEngagementPct: humanSessions > 0 ? Math.round((lowEngagementSessions / humanSessions) * 1000) / 10 : 0,
+    };
+  }
 }

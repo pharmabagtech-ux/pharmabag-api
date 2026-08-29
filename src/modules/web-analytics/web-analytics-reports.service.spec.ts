@@ -116,3 +116,88 @@ describe('WebAnalyticsReportsService.traffic', () => {
     expect(result.current.visitors).toBe(5);
   });
 });
+
+describe('WebAnalyticsReportsService.audience', () => {
+  it('returns device/os/browser breakdowns, converting bigint counts to numbers, defaulting nulls to Unknown', async () => {
+    const { service, prisma } = buildService();
+    prisma.$queryRaw
+      .mockResolvedValueOnce([{ deviceType: 'desktop', visitors: BigInt(10), sessions: BigInt(12) }])
+      .mockResolvedValueOnce([{ os: null, visitors: BigInt(2), sessions: BigInt(3) }])
+      .mockResolvedValueOnce([{ browser: 'Chrome', visitors: BigInt(8), sessions: BigInt(9) }])
+      .mockResolvedValueOnce([
+        { totalSessions: BigInt(20), botSessions: BigInt(2), humanSessions: BigInt(18), lowEngagementSessions: BigInt(3) },
+      ]);
+
+    const result = await service.audience(range);
+
+    expect(result.devices).toEqual([{ deviceType: 'desktop', visitors: 10, sessions: 12 }]);
+    expect(result.os).toEqual([{ os: 'Unknown', visitors: 2, sessions: 3 }]);
+    expect(result.browsers).toEqual([{ browser: 'Chrome', visitors: 8, sessions: 9 }]);
+  });
+
+  it('computes lowEngagementPct rounded to 1 decimal, based on human sessions only', async () => {
+    const { service, prisma } = buildService();
+    prisma.$queryRaw
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { totalSessions: BigInt(23), botSessions: BigInt(3), humanSessions: BigInt(20), lowEngagementSessions: BigInt(7) },
+      ]);
+
+    const result = await service.audience(range);
+
+    expect(result.quality).toEqual({
+      totalSessions: 23,
+      botSessions: 3,
+      humanSessions: 20,
+      lowEngagementSessions: 7,
+      lowEngagementPct: 35,
+    });
+  });
+
+  it('returns lowEngagementPct 0 when there are no human sessions, avoiding a divide-by-zero', async () => {
+    const { service, prisma } = buildService();
+    prisma.$queryRaw
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { totalSessions: BigInt(5), botSessions: BigInt(5), humanSessions: BigInt(0), lowEngagementSessions: BigInt(0) },
+      ]);
+
+    const result = await service.audience(range);
+
+    expect(result.quality.lowEngagementPct).toBe(0);
+  });
+
+  it('degrades the devices/os/browsers breakdowns gracefully on failure, without losing quality', async () => {
+    const { service, prisma } = buildService();
+    prisma.$queryRaw
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce([
+        { totalSessions: BigInt(1), botSessions: BigInt(0), humanSessions: BigInt(1), lowEngagementSessions: BigInt(0) },
+      ]);
+
+    const result = await service.audience(range);
+
+    expect(result.devices).toEqual([]);
+    expect(result.os).toEqual([]);
+    expect(result.browsers).toEqual([]);
+    expect(result.quality.totalSessions).toBe(1);
+  });
+
+  it('does not bot-filter the base session set in the quality query (it needs both to compute totals)', async () => {
+    const { service, prisma } = buildService();
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    await service.audience(range);
+
+    const qualitySql: any = prisma.$queryRaw.mock.calls[3][0];
+    const sqlText = Array.isArray(qualitySql?.strings) ? qualitySql.strings.join('') : String(qualitySql);
+    expect(sqlText).not.toContain('"isBot" = false');
+    expect(sqlText).toContain('FILTER (WHERE s."isBot")');
+  });
+});
