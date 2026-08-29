@@ -64,46 +64,13 @@ export class BlogAdminController {
     return { message: 'Blog posts retrieved successfully', data };
   }
 
-  @Get(':id')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Get a blog post by ID' })
-  async getPostById(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.blogService.adminGetPostById(id);
-    return { message: 'Blog post retrieved successfully', data };
-  }
-
-  @Put(':id')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Update a blog post' })
-  async updatePost(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateBlogPostDto,
-  ) {
-    const data = await this.blogService.updatePost(id, dto);
-    return { message: 'Blog post updated successfully', data };
-  }
-
-  @Patch(':id/status')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Publish or unpublish a blog post' })
-  async updatePostStatus(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateBlogStatusDto,
-  ) {
-    const data = await this.blogService.updatePostStatus(id, dto);
-    return { message: 'Blog post status updated successfully', data };
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Delete a blog post' })
-  async deletePost(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.blogService.deletePost(id);
-    return { message: 'Blog post deleted successfully', data };
-  }
-
   // ──────────────────────────────────────────────
-  // AUTHORS
+  // AUTHORS + CATEGORIES
+  //
+  // Declared BEFORE the `:id` post routes on purpose: routes match in
+  // declaration order, so with these below, `GET /admin/blogs/authors` was
+  // captured by `GET :id` and 400'd on the UUID pipe — the same dead-route
+  // class as the old /admin/users/sellers bug. Never move these back down.
   // ──────────────────────────────────────────────
 
   @Post('authors')
@@ -149,10 +116,6 @@ export class BlogAdminController {
     return { message: 'Author deleted successfully', data };
   }
 
-  // ──────────────────────────────────────────────
-  // CATEGORIES
-  // ──────────────────────────────────────────────
-
   @Post('categories')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a blog category' })
@@ -186,5 +149,47 @@ export class BlogAdminController {
   async deleteCategory(@Param('id', ParseUUIDPipe) id: string) {
     const data = await this.blogService.deleteCategory(id);
     return { message: 'Category deleted successfully', data };
+  }
+
+  // ──────────────────────────────────────────────
+  // BLOG POSTS BY ID (keep below the literal routes above)
+  // ──────────────────────────────────────────────
+
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get a blog post by ID' })
+  async getPostById(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.blogService.adminGetPostById(id);
+    return { message: 'Blog post retrieved successfully', data };
+  }
+
+  @Put(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update a blog post' })
+  async updatePost(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBlogPostDto,
+  ) {
+    const data = await this.blogService.updatePost(id, dto);
+    return { message: 'Blog post updated successfully', data };
+  }
+
+  @Patch(':id/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Publish or unpublish a blog post' })
+  async updatePostStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBlogStatusDto,
+  ) {
+    const data = await this.blogService.updatePostStatus(id, dto);
+    return { message: 'Blog post status updated successfully', data };
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete a blog post' })
+  async deletePost(@Param('id', ParseUUIDPipe) id: string) {
+    const data = await this.blogService.deletePost(id);
+    return { message: 'Blog post deleted successfully', data };
   }
 }
