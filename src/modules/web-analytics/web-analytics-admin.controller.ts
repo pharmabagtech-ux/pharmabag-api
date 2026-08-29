@@ -39,4 +39,17 @@ export class WebAnalyticsAdminController {
     const data = await this.webAnalyticsReportsService.traffic({ from, to });
     return { message: 'Traffic report retrieved successfully', data };
   }
+
+  @Get('audience')
+  @ApiOperation({ summary: 'Device/OS/browser breakdown and traffic-quality summary for a date range' })
+  @ApiResponse({ status: 200, description: 'Audience report returned' })
+  async audience(@Query() query: TrafficRangeDto) {
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    if (to <= from) {
+      throw new BadRequestException('to must be after from');
+    }
+    const data = await this.webAnalyticsReportsService.audience({ from, to });
+    return { message: 'Audience report retrieved successfully', data };
+  }
 }

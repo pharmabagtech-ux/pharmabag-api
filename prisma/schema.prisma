@@ -918,11 +918,17 @@ model WebSession {
   isBot          Boolean  @default(false)
   sourceCategory String?
   referrerDomain String?
+  deviceType     String?
+  os             String?
+  browser        String?
 
   @@index([visitorId])
   @@index([lastEventAt])
   @@index([sourceCategory, startedAt])
   @@index([referrerDomain])
+  @@index([deviceType, startedAt])
+  @@index([os, startedAt])
+  @@index([browser, startedAt])
   @@map("analytics_sessions")
 }
 
