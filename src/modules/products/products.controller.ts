@@ -11,7 +11,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -135,6 +135,33 @@ export class ProductsController {
   ) {
     const data = await this.productsService.getSuggestions(q, type);
     return { message: 'Suggestions retrieved successfully', data };
+  }
+
+  /**
+   * Sitemap enumeration for the storefront's XML sitemap chunks.
+   *
+   * `@SkipThrottle()` is deliberate and safe here: the caller is the web box's
+   * server-side sitemap builder, whose requests all arrive from one IP — the
+   * per-visitor throttle treated its 269-call crawl of `/products` as a single
+   * abusive visitor and 429'd most of the catalogue out of the sitemaps. This
+   * endpoint replaces those calls at ~6 requests per full rebuild, returns only
+   * slug/dates/hasSellers (no pricing, no listings), and is read-only — so
+   * exempting it does not reopen the scraping vector the throttle exists for.
+   */
+  @SkipThrottle()
+  @Get('sitemap')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Slim product list (slug + dates) for XML sitemap generation' })
+  @ApiResponse({ status: 200, description: 'Paginated slug list, up to 5000 per page' })
+  async findAllForSitemap(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const data = await this.productsService.findAllForSitemap({
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+    return { message: 'Sitemap products retrieved successfully', data };
   }
 
   @Get('featured')
