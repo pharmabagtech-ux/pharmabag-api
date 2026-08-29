@@ -60,4 +60,26 @@ describe('parseDeviceOsBrowser', () => {
     expect(parseDeviceOsBrowser(null)).toEqual({ deviceType: 'desktop', os: 'Unknown', browser: 'Unknown' });
     expect(parseDeviceOsBrowser(undefined)).toEqual({ deviceType: 'desktop', os: 'Unknown', browser: 'Unknown' });
   });
+
+  it('Opera Mini on Android is mobile, not tablet (no "Mobile" token in its own UA)', () => {
+    const OPERA_MINI_ANDROID = 'Opera/9.80 (Android; Opera Mini/51.0.2254/191.234; U; en) Presto/2.12.423 Version/12.16';
+    expect(parseDeviceOsBrowser(OPERA_MINI_ANDROID)).toMatchObject({ deviceType: 'mobile', os: 'Android' });
+  });
+
+  it('Instagram in-app browser on Android is recognized, not misread as plain Chrome', () => {
+    const INSTAGRAM_ANDROID =
+      'Mozilla/5.0 (Linux; Android 12; SM-G991B Build/SP1A.210812.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/107.0.5304.141 Mobile Safari/537.36 Instagram 275.0.0.27.98 Android';
+    expect(parseDeviceOsBrowser(INSTAGRAM_ANDROID).browser).toBe('Instagram in-app');
+  });
+
+  it('Facebook in-app browser on Android is recognized, not misread as plain Chrome', () => {
+    const FACEBOOK_ANDROID =
+      'Mozilla/5.0 (Linux; Android 12; SM-G991B Build/SP1A.210812.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/107.0.5304.141 Mobile Safari/537.36 [FB_IAB/FB4A]';
+    expect(parseDeviceOsBrowser(FACEBOOK_ANDROID).browser).toBe('Facebook in-app');
+  });
+
+  it('plain Linux desktop falls through to the Linux OS branch', () => {
+    const LINUX_DESKTOP = 'Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0';
+    expect(parseDeviceOsBrowser(LINUX_DESKTOP)).toEqual({ deviceType: 'desktop', os: 'Linux', browser: 'Firefox' });
+  });
 });
