@@ -755,6 +755,65 @@ export class ProductsService {
   }
 
   /**
+   * Slim catalogue enumeration for the storefront's XML sitemaps.
+   *
+   * The sitemap builder previously paged the full grid endpoint (`findAll`) at
+   * its 100-row cap — 269 sequential requests from the web box's single IP —
+   * and the per-visitor throttle killed the run at ~call 100, leaving most of
+   * the catalogue in no sitemap and four advertised chunk files as 404s. This
+   * method exists so one 5,000-row page replaces fifty grid calls: it selects
+   * only what a sitemap `<url>` entry needs and skips the grid's includes,
+   * pricing mapping and two-bucket ordering entirely.
+   *
+   * Ordering is (createdAt, id) — stable across requests — so a product does
+   * not wander between chunk files from one crawl to the next.
+   */
+  async findAllForSitemap(query: { page?: number; limit?: number }) {
+    const page = Math.max(1, Math.floor(Number(query.page) || 1));
+    const limit = Math.min(5000, Math.max(1, Math.floor(Number(query.limit) || 5000)));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.MasterProductWhereInput = {
+      isActive: true,
+      deletedAt: null,
+    };
+
+    const [total, masters] = await Promise.all([
+      this.prisma.masterProduct.count({ where }),
+      this.prisma.masterProduct.findMany({
+        where,
+        select: {
+          slug: true,
+          updatedAt: true,
+          createdAt: true,
+          // take-1 relation probe instead of a filtered _count: it answers
+          // "does at least one active listing exist" with an EXISTS-shaped
+          // query and no Prisma preview-feature dependency.
+          products: { where: ACTIVE_LISTING, select: { id: true }, take: 1 },
+        },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      products: masters.map((m) => ({
+        slug: m.slug,
+        updatedAt: m.updatedAt,
+        createdAt: m.createdAt,
+        hasSellers: m.products.length > 0,
+      })),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
    * Get a single Master Product with all its seller listings.
    * This provides the data for the "Compare Sellers" view.
    */
