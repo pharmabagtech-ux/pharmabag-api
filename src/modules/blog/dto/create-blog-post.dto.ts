@@ -46,9 +46,15 @@ export class CreateBlogPostDto {
   @IsUUID()
   authorId: string;
 
-  @ApiProperty({ example: 'uuid-of-category' })
+  /**
+   * Optional on purpose: `BlogPost.categoryId` is nullable in the schema and
+   * uncategorised posts are legitimate — requiring it here was what stopped
+   * the admin UI from ever creating one.
+   */
+  @ApiPropertyOptional({ example: 'uuid-of-category' })
+  @IsOptional()
   @IsUUID()
-  categoryId: string;
+  categoryId?: string;
 
   @ApiPropertyOptional({ example: ['cold', 'medicine', 'india'] })
   @IsOptional()
