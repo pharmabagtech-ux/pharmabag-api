@@ -790,6 +790,11 @@ export class ProductsService {
           // "does at least one active listing exist" with an EXISTS-shaped
           // query and no Prisma preview-feature dependency.
           products: { where: ACTIVE_LISTING, select: { id: true }, take: 1 },
+          images: {
+            select: { url: true },
+            orderBy: { createdAt: 'asc' as const },
+            take: 1,
+          },
         },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         skip,
@@ -803,6 +808,8 @@ export class ProductsService {
         updatedAt: m.updatedAt,
         createdAt: m.createdAt,
         hasSellers: m.products.length > 0,
+        // First catalogue image, consumed by the buyer's image sitemap.
+        imageUrl: m.images[0]?.url ?? null,
       })),
       meta: {
         total,
