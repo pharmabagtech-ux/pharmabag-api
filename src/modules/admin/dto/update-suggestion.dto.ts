@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsBoolean, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsBoolean, IsUUID, MaxLength } from 'class-validator';
 
 export class UpdateSuggestionDto {
   @ApiPropertyOptional({ example: 'Baconil 2mg' })
@@ -46,4 +46,26 @@ export class UpdateSuggestionDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  // ─── SEO head overrides (null/absent = generated defaults) ───
+  // Empty string is MEANINGFUL here: it clears an override back to the
+  // generated head, so these use explicit undefined-checks in the service.
+
+  @ApiPropertyOptional({ example: 'Dolo 650 Wholesale Price — Micro Labs' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(200)
+  metaTitle?: string;
+
+  @ApiPropertyOptional({ example: 'Buy Dolo 650 in bulk at wholesale rates…' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(320)
+  metaDescription?: string;
+
+  @ApiPropertyOptional({ example: 'https://pharmabag03.s3.ap-south-1.amazonaws.com/blog-images/og.png' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(1000)
+  ogImage?: string;
 }

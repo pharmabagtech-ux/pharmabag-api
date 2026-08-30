@@ -1069,6 +1069,10 @@ export class ProductsService {
       safetyAdvice: m.safetyAdvice,
       packSize: m.packSize,
       storageAndHandling: m.storageAndHandling,
+      // Admin-set SEO head overrides; null = the storefront's generated head.
+      metaTitle: m.metaTitle,
+      metaDescription: m.metaDescription,
+      ogImage: m.ogImage,
       // Group seller listings, cheapest net price first (see
       // rankListingsByNetPrice — the DB's `orderBy: mrp` ties whenever
       // sellers share a printed MRP and only their discount differs).
