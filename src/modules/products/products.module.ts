@@ -8,8 +8,12 @@ import { MasterProductsBulkController } from './master-products-bulk.controller'
 import { MasterProductsBulkService } from './services/master-products-bulk.service';
 import { SellerBulkCsvController } from './seller-bulk-csv.controller';
 import { SellerBulkCsvService } from './services/seller-bulk-csv.service';
+import { RedirectsModule } from '../redirects/redirects.module';
 
 @Module({
+  // RedirectsModule: bulk uploads auto-create PRODUCT_RENAME redirects when
+  // they rewrite catalogue slugs.
+  imports: [RedirectsModule],
   controllers: [ProductsController, MasterProductsBulkController, SellerBulkCsvController],
   providers: [
     ProductsService,

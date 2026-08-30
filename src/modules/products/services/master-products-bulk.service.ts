@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { RedirectsService } from '../../redirects/redirects.service';
 import * as csvParserModule from 'csv-parser';
 const csv = (csvParserModule as any).default || csvParserModule;
 import { Readable } from 'stream';
@@ -8,7 +9,10 @@ import { Readable } from 'stream';
 export class MasterProductsBulkService {
   private readonly logger = new Logger(MasterProductsBulkService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redirectsService: RedirectsService,
+  ) {}
 
   async processBulkCsv(buffer: Buffer, operation: 'NEW' | 'UPDATE' | 'DELETE'): Promise<any> {
     const results: any[] = [];
@@ -169,15 +173,21 @@ export class MasterProductsBulkService {
 
     // 6. Bulk Prepare Master Products
     const skuList = newOrUpdateRows.map(r => r['SKU'].trim());
-    const existingProducts: { sku: string | null; id: string }[] = [];
+    // `slug` is captured so slug REWRITES can be detected after the update —
+    // the pre-update slug is each product's live URL, and losing it silently
+    // is how a bulk upload orphans thousands of indexed pages.
+    const existingProducts: { sku: string | null; id: string; slug: string | null }[] = [];
     for (const chunk of this.chunkArray(skuList, 1000)) {
       const batch = await this.prisma.masterProduct.findMany({
         where: { sku: { in: chunk } },
-        select: { sku: true, id: true }
+        select: { sku: true, id: true, slug: true }
       });
       existingProducts.push(...batch);
     }
     const existingSkus = new Set(existingProducts.map(p => p.sku));
+    const oldSlugBySku = new Map(
+      existingProducts.filter(p => p.sku && p.slug).map(p => [p.sku as string, p.slug as string]),
+    );
 
     const toInsert: any[] = [];
     const toUpdate: any[] = [];
@@ -251,12 +261,30 @@ export class MasterProductsBulkService {
       }
     }
 
+    let redirectsCreated = 0;
     if (toUpdate.length > 0) {
       const updateResult = await this.bulkUpdateMasterProducts(toUpdate);
       successCount += updateResult.updatedCount;
       if (updateResult.errors.length > 0) {
         errors.push(...updateResult.errors);
         failCount += updateResult.errors.length;
+      }
+
+      // Every slug this upload rewrote leaves an indexed URL behind. A 301
+      // preserves that page's equity; without it the old URL now returns a
+      // real 404 (soft-404s were eliminated 2026-08-29) and Google drops it.
+      const renamePairs = toUpdate
+        .map((p) => ({ oldSlug: oldSlugBySku.get(p.sku) ?? '', newSlug: p.slug as string }))
+        .filter((pair) => pair.oldSlug && pair.newSlug && pair.oldSlug !== pair.newSlug);
+      if (renamePairs.length > 0) {
+        // Redirects are an SEO enhancement; the upload is the client's data
+        // pipeline. The pipeline must never fail because of them.
+        try {
+          redirectsCreated = await this.redirectsService.createFromRename(renamePairs);
+          this.logger.log(`Created ${redirectsCreated} redirect(s) for renamed product URLs`);
+        } catch (error) {
+          this.logger.error(`Rename-redirect creation failed (upload unaffected): ${String(error)}`);
+        }
       }
 
       // The SKU is the anchor: a correction made against a SKU in the sheet has
@@ -312,7 +340,7 @@ export class MasterProductsBulkService {
       }
     }
 
-    return { successCount, failCount, errors };
+    return { successCount, failCount, errors, redirectsCreated };
   }
 
   /**

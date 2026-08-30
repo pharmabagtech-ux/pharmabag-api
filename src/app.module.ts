@@ -33,6 +33,7 @@ import { ReferralModule } from './modules/referrals/referral.module';
 import { CustomOrdersModule } from './modules/custom-orders/custom-orders.module';
 import { WebAnalyticsModule } from './modules/web-analytics/web-analytics.module';
 import { SiteSettingsModule } from './modules/site-settings/site-settings.module';
+import { RedirectsModule } from './modules/redirects/redirects.module';
 
 @Module({
   imports: [
@@ -111,6 +112,7 @@ import { SiteSettingsModule } from './modules/site-settings/site-settings.module
     CustomOrdersModule,
     WebAnalyticsModule,
     SiteSettingsModule,
+    RedirectsModule,
   ],
   providers: [
     // Apply throttler guard globally
