@@ -1837,6 +1837,12 @@ export class AdminService {
         ...(dto.categoryId && { categoryId: dto.categoryId }),
         ...(dto.subCategoryId && { subCategoryId: dto.subCategoryId }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        // SEO overrides: explicit undefined-checks because empty string is a
+        // real instruction — "clear this override" — stored as null so the
+        // storefront falls back to its generated head.
+        ...(dto.metaTitle !== undefined && { metaTitle: dto.metaTitle.trim() || null }),
+        ...(dto.metaDescription !== undefined && { metaDescription: dto.metaDescription.trim() || null }),
+        ...(dto.ogImage !== undefined && { ogImage: dto.ogImage.trim() || null }),
       },
       include: {
         category: { select: { id: true, name: true } },
