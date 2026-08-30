@@ -960,3 +960,39 @@ model SiteSetting {
 
   @@map("site_settings")
 }
+
+enum RedirectSource {
+  MANUAL
+  PRODUCT_RENAME
+}
+
+/// 301 redirects served by the storefront middleware. fromPath is normalized
+/// (leading slash, no trailing slash, lowercase, no query) and unique.
+model UrlRedirect {
+  id         String         @id @default(uuid())
+  fromPath   String         @unique
+  toPath     String
+  statusCode Int            @default(301)
+  source     RedirectSource @default(MANUAL)
+  hits       Int            @default(0)
+  lastHitAt  DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@map("url_redirects")
+}
+
+/// Distinct 404 paths seen by the storefront, with hit counts. Scanner noise
+/// is filtered before it ever reaches this table.
+model NotFoundHit {
+  id           String   @id @default(uuid())
+  path         String   @unique
+  hits         Int      @default(1)
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  lastReferrer String?
+  resolved     Boolean  @default(false)
+
+  @@index([resolved, hits])
+  @@map("not_found_hits")
+}
