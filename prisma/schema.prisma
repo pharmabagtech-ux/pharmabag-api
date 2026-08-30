@@ -674,7 +674,7 @@ model MasterProduct {
   @@index([deletedAt])
   @@map("master_products")
   /// Optional SEO head overrides, edited in the admin catalogue modal.
-  /// Null means "use the generated defaults" — the state of the whole
+  /// Null means "use the generated defaults" - the state of the whole
   /// catalogue until an admin deliberately overrides a product.
   metaTitle       String?
   metaDescription String?
