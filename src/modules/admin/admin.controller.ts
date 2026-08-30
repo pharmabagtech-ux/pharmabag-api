@@ -13,7 +13,8 @@ import {
   ParseUUIDPipe,
   BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -626,6 +627,42 @@ export class AdminController {
   ) {
     const data = await this.adminService.updateSuggestion(id, dto);
     return { message: 'Suggestion updated successfully', data };
+  }
+
+  @Post('suggestions/:id/image')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object' as const,
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        fileName: { type: 'string' },
+        altText: { type: 'string' },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiOperation({ summary: "Upload/replace a master product's catalogue image" })
+  @ApiResponse({ status: 200, description: 'Image saved' })
+  @ApiResponse({ status: 404, description: 'Suggestion not found' })
+  async setSuggestionImage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('fileName') fileName?: string,
+    @Body('altText') altText?: string,
+  ) {
+    const data = await this.adminService.setSuggestionImage(id, file, {
+      fileName,
+      altText,
+    });
+    return { message: 'Image saved', data };
   }
 
   @Delete('suggestions/:id')

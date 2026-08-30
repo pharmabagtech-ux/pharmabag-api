@@ -18,6 +18,7 @@ import {
   Prisma,
   VerificationStatus,
 } from '@prisma/client';
+import { StorageService, sanitizeImageBaseName } from '../storage/storage.service';
 import { PrismaService } from '../../database/prisma.service';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { QuerySellersDto } from './dto/query-sellers.dto';
@@ -40,6 +41,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly storage: StorageService,
   ) {}
 
 
@@ -1773,7 +1775,7 @@ export class AdminService {
     const [data, total] = await Promise.all([
       this.prisma.masterProduct.findMany({
         where,
-        include: { category: { select: { id: true, name: true } }, subCategory: { select: { id: true, name: true } }, images: { select: { id: true, url: true }, take: 1 }, company: { select: { id: true, name: true } }, chemicalCompositionRef: { select: { id: true, name: true } } },
+        include: { category: { select: { id: true, name: true } }, subCategory: { select: { id: true, name: true } }, images: { select: { id: true, url: true, altText: true }, take: 1 }, company: { select: { id: true, name: true } }, chemicalCompositionRef: { select: { id: true, name: true } } },
         orderBy: { name: 'asc' },
         skip,
         take: limit,
@@ -1787,7 +1789,7 @@ export class AdminService {
   async getSuggestionById(id: string) {
     const suggestion = await this.prisma.masterProduct.findUnique({
       where: { id },
-      include: { category: { select: { id: true, name: true } }, subCategory: { select: { id: true, name: true } }, images: { select: { id: true, url: true } }, company: { select: { id: true, name: true } }, chemicalCompositionRef: { select: { id: true, name: true } }, products: {
+      include: { category: { select: { id: true, name: true } }, subCategory: { select: { id: true, name: true } }, images: { select: { id: true, url: true, altText: true } }, company: { select: { id: true, name: true } }, chemicalCompositionRef: { select: { id: true, name: true } }, products: {
           select: { id: true, seller: { select: { companyName: true } }, mrp: true },
           take: 10,
         },
@@ -1850,7 +1852,83 @@ export class AdminService {
       },
     });
 
+    // Image SEO fields apply to the product's first image (products carry at
+    // most one today). Silently skipped when there is no image yet - the
+    // upload endpoint is the way to create one.
+    if (dto.imageAltText !== undefined || dto.imageFileName !== undefined) {
+      const image = await this.prisma.masterProductImage.findFirst({
+        where: { masterProductId: id },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (image) {
+        const data: { altText?: string | null; url?: string } = {};
+        if (dto.imageAltText !== undefined) {
+          // Empty string = clear override; storefront falls back to
+          // "<name> - PharmaBag".
+          data.altText = dto.imageAltText.trim() || null;
+        }
+        if (dto.imageFileName !== undefined && dto.imageFileName.trim()) {
+          data.url = await this.storage.renameCatalogueImage(
+            image.url,
+            dto.imageFileName,
+          );
+        }
+        if (Object.keys(data).length > 0) {
+          await this.prisma.masterProductImage.update({
+            where: { id: image.id },
+            data,
+          });
+          await this.prisma.masterProduct.update({
+            where: { id },
+            data: { updatedAt: new Date() },
+          });
+        }
+      }
+    }
+
     return updated;
+  }
+
+  /**
+   * Upload (or replace) a master product's catalogue image.
+   *
+   * File name defaults to the storefront convention
+   * `<product-name>-pharmabag` unless the caller supplies one; alt text
+   * stays NULL unless supplied, which renders as "<name> - PharmaBag".
+   */
+  async setSuggestionImage(
+    id: string,
+    file: Express.Multer.File,
+    opts: { fileName?: string; altText?: string },
+  ) {
+    const product = await this.prisma.masterProduct.findUnique({
+      where: { id },
+      select: { id: true, name: true },
+    });
+    if (!product) throw new NotFoundException('Suggestion not found');
+
+    const base =
+      opts.fileName?.trim() || sanitizeImageBaseName(`${product.name}-pharmabag`);
+    const url = await this.storage.uploadCatalogueImage(file, base);
+    const altText = opts.altText?.trim() || null;
+
+    const existing = await this.prisma.masterProductImage.findFirst({
+      where: { masterProductId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+    const image = existing
+      ? await this.prisma.masterProductImage.update({
+          where: { id: existing.id },
+          data: { url, altText },
+        })
+      : await this.prisma.masterProductImage.create({
+          data: { masterProductId: id, url, altText },
+        });
+    await this.prisma.masterProduct.update({
+      where: { id },
+      data: { updatedAt: new Date() },
+    });
+    return image;
   }
 
 

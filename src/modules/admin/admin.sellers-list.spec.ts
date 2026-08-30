@@ -22,7 +22,7 @@ function buildService() {
       count: jest.fn().mockResolvedValue(0),
     },
   };
-  const service = new AdminService(prisma, {} as any);
+  const service = new AdminService(prisma, {} as any, {} as any);
   return { service, prisma };
 }
 
