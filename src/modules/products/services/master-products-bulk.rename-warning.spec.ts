@@ -10,7 +10,7 @@ import { MasterProductsBulkService } from './master-products-bulk.service';
  * That is what happened to 1,576 master products on 2026-07-28. This heuristic
  * does not block the rename; it decides which ones are reported for review.
  */
-const svc = new MasterProductsBulkService({} as any);
+const svc = new MasterProductsBulkService({} as any, {} as any);
 const sameProduct = (a: string, b: string): boolean =>
   (svc as any).looksLikeSameProduct(a, b);
 
