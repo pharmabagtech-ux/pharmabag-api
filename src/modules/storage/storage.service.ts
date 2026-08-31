@@ -8,9 +8,24 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  CopyObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
+
+/**
+ * Slug-sanitises a catalogue image base name: lowercase, alphanumerics and
+ * single hyphens only. Shared by upload and rename so a hand-typed name and
+ * an auto-derived one land in the same shape.
+ */
+export function sanitizeImageBaseName(name: string): string {
+  return (name || '')
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{2,5}$/i, '') // tolerate a pasted extension
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120);
+}
 
 @Injectable()
 export class StorageService {
@@ -33,6 +48,9 @@ export class StorageService {
     'image/png',
     'image/webp',
     'image/jpg',
+    // The catalogue's existing 109 product images are AVIF; uploads that
+    // replace them must be accepted in the same format.
+    'image/avif',
   ];
 
   private readonly ALLOWED_DOC_TYPES = [
@@ -48,6 +66,66 @@ export class StorageService {
     this.validateFile(file, this.ALLOWED_IMAGE_TYPES);
     const key = await this.upload(file, 'product-images');
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+  }
+
+  /**
+   * Catalogue (master product) image with an SEO-meaningful file name.
+   *
+   * Unlike the uuid-named uploads above, the key here IS the SEO surface:
+   * `images/<base-name>.<ext>`, where the caller derives base-name from the
+   * product name (the storefront's convention appends "-pharmabag"). Goes to
+   * the same `images/` folder as the existing catalogue set.
+   */
+  async uploadCatalogueImage(
+    file: Express.Multer.File,
+    baseName: string,
+  ): Promise<string> {
+    this.validateFile(file, this.ALLOWED_IMAGE_TYPES);
+    const safe = sanitizeImageBaseName(baseName);
+    if (!safe) throw new BadRequestException('Invalid image file name');
+    const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
+    const key = `images/${safe}.${ext.replace(/[^a-z0-9]/g, '') || 'jpg'}`;
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      }),
+    );
+    this.logger.log(`Catalogue image uploaded: ${key}`);
+    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+  }
+
+  /**
+   * Rename a catalogue image by server-side S3 copy.
+   *
+   * The OLD object is deliberately left in place: its URL may still be cached
+   * in rendered pages, sitemaps and Google's image index for hours, and a
+   * dangling 404 there costs more than a few duplicated kilobytes.
+   */
+  async renameCatalogueImage(
+    currentUrl: string,
+    newBaseName: string,
+  ): Promise<string> {
+    const marker = '.amazonaws.com/';
+    const idx = currentUrl.indexOf(marker);
+    if (idx === -1) throw new BadRequestException('Not a catalogue image URL');
+    const oldKey = currentUrl.slice(idx + marker.length);
+    const safe = sanitizeImageBaseName(newBaseName);
+    if (!safe) throw new BadRequestException('Invalid image file name');
+    const ext = (oldKey.split('.').pop() || 'avif').toLowerCase();
+    const newKey = `images/${safe}.${ext}`;
+    if (newKey === oldKey) return currentUrl;
+    await this.s3.send(
+      new CopyObjectCommand({
+        Bucket: this.bucket,
+        CopySource: `${this.bucket}/${encodeURIComponent(oldKey).replace(/%2F/g, '/')}`,
+        Key: newKey,
+      }),
+    );
+    this.logger.log(`Catalogue image renamed (copied): ${oldKey} -> ${newKey}`);
+    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${newKey}`;
   }
 
   async uploadDrugLicense(file: Express.Multer.File): Promise<string> {

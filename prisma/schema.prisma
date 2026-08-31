@@ -685,6 +685,8 @@ model MasterProductImage {
   id              String        @id @default(uuid())
   masterProductId String
   url             String
+  // SEO alt text. NULL = storefront renders "<name> - PharmaBag" default.
+  altText         String?
   createdAt       DateTime      @default(now())
   masterProduct   MasterProduct @relation(fields: [masterProductId], references: [id], onDelete: Cascade)
 

@@ -68,4 +68,23 @@ export class UpdateSuggestionDto {
   @IsOptional()
   @MaxLength(1000)
   ogImage?: string;
+
+  // --- Product image SEO (applies to the product's first image) ---
+
+  /** Empty string clears the override back to "<name> - PharmaBag". */
+  @ApiPropertyOptional({ example: 'Dolo 650 Tablet - PharmaBag' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(300)
+  imageAltText?: string;
+
+  /**
+   * New file name (extension not needed). Renames the S3 object by copy and
+   * repoints the image row; the old object stays live for caches.
+   */
+  @ApiPropertyOptional({ example: 'dolo-650-tablet-pharmabag' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(150)
+  imageFileName?: string;
 }
