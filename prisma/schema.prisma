@@ -957,6 +957,45 @@ model WebEvent {
   @@map("analytics_events")
 }
 
+/// Per-page SEO overrides, keyed by the storefront path.
+///
+/// Path-keyed rather than (entityType, entityId): every storefront page
+/// already knows its own path, so ONE lookup serves products, categories,
+/// dosage forms, brands, molecules, locations, blog posts and static pages
+/// alike. entityType/entityId are carried for admin filtering only, never
+/// for resolution.
+///
+/// Every column is nullable on purpose: a row overrides only the fields it
+/// fills, and the storefront falls back to its generated value for the rest.
+model PageSeo {
+  id                String   @id @default(uuid())
+  path              String   @unique
+  entityType        String?
+  entityId          String?
+  title             String?
+  description       String?
+  canonicalUrl      String?
+  robots            String?
+  ogTitle           String?
+  ogDescription     String?
+  ogImage           String?
+  twitterCard       String?
+  focusKeyword      String?
+  secondaryKeywords String[] @default([])
+  entityDescription String?
+  aiSummary         String?
+  faq               Json?
+  structuredData    Json?
+  imageAlts         Json?
+  updatedBy         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([entityType])
+  @@index([updatedAt])
+  @@map("page_seo")
+}
+
 /// Single-row site-wide settings (id is always "site"). Stored as validated
 /// JSON rather than one column per key so adding a setting is a DTO change,
 /// not a migration. Written only by the admin site-settings endpoint, read
