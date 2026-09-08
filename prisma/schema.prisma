@@ -984,6 +984,9 @@ model PageSeo {
   secondaryKeywords String[] @default([])
   entityDescription String?
   aiSummary         String?
+  h1                String?
+  intro             String?
+  bodyHtml          String?
   faq               Json?
   structuredData    Json?
   imageAlts         Json?

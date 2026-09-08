@@ -102,6 +102,38 @@ export class UpsertPageSeoDto {
   @MaxLength(4000)
   aiSummary?: string;
 
+  /**
+   * The visible page heading. Exactly one H1 renders per page, so this
+   * replaces the generated one rather than adding to it.
+   */
+  @ApiPropertyOptional({ example: 'Ayurvedic medicines — wholesale suppliers in India' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(300)
+  h1?: string;
+
+  /**
+   * The opening paragraph above the product grid.
+   *
+   * May carry `{{product_count}}`, `{{name}}` and `{{min_order_value}}`, which
+   * the storefront resolves at render. That is what keeps an edited sentence
+   * from freezing a product count that changes every time the catalogue does.
+   */
+  @ApiPropertyOptional({
+    example: 'PharmaBag lists {{product_count}} ayurvedic medicines for wholesale.',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(4000)
+  intro?: string;
+
+  /** Rich text rendered below the product grid. Same tokens as `intro`. */
+  @ApiPropertyOptional({ example: '<p>Buying guidance…</p>' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(60000)
+  bodyHtml?: string;
+
   /** `[{ question, answer }]` — rendered AND emitted as FAQPage JSON-LD. */
   @ApiPropertyOptional({ type: 'array', items: { type: 'object' } })
   @IsArray()

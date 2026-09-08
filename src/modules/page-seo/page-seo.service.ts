@@ -130,6 +130,9 @@ export class PageSeoService {
       focusKeyword: text(dto.focusKeyword),
       entityDescription: text(dto.entityDescription),
       aiSummary: text(dto.aiSummary),
+      h1: text(dto.h1),
+      intro: text(dto.intro),
+      bodyHtml: text(dto.bodyHtml),
       ...(dto.secondaryKeywords !== undefined
         ? { secondaryKeywords: dto.secondaryKeywords.filter((k) => k.trim()) }
         : {}),
