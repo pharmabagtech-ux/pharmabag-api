@@ -694,7 +694,17 @@ export class ProductsService {
         orderBy: { mrp: 'asc' as const },
       },
     };
-    const gridOrderBy = { [effectiveSortBy]: sortOrder };
+    // `id` breaks ties. The catalogue was bulk-uploaded, so thousands of
+    // masters share a single `createdAt`; Postgres may return ties in any
+    // order, and that order changes with LIMIT/OFFSET — the same search at two
+    // page sizes really did return different rows in positions 4-8 on live.
+    // Without this a product moves between pages from one request to the next,
+    // and paging can repeat or skip rows outright. `findAllForSitemap` already
+    // orders by (createdAt, id) for exactly this reason; the grid did not.
+    const gridOrderBy = [
+      { [effectiveSortBy]: sortOrder },
+      { id: 'asc' as const },
+    ];
 
     // Results come out in ordered buckets, read in turn until the page is full.
     //
