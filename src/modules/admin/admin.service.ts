@@ -2019,18 +2019,12 @@ export class AdminService {
             });
             existingCats.forEach(c => catCache.set(c.name, c.id));
 
-            // Create missing
-            for (const name of uniqueCategoryNames) {
-              if (!catCache.has(name)) {
-                const cat = await this.prisma.category.create({
-                  data: { name, slug: slugify(name, { lower: true, strict: true }) || name.toLowerCase() }
-                });
-                catCache.set(name, cat.id);
-              }
-            }
-
-            // Default category
-            const defaultCatId = await this.resolveDefaultCategory(catCache);
+            // Missing categories are NOT created. They are made deliberately
+            // in Admin → Categories; an import that names one which does not
+            // exist skips those rows and reports them, rather than minting a
+            // category that immediately gets its own landing page and sitemap
+            // entry. Same reason the "Uncategorized"/"General" fallbacks are
+            // gone: a row with no category is a row to fix, not to file away.
 
             // 3. Pre-resolve all Subcategories
             const subCatPairs = new Set<string>(); // "catName|subName"
@@ -2044,26 +2038,14 @@ export class AdminService {
             
             for (const pair of subCatPairs) {
               const [catName, subName] = pair.split('|');
-              const categoryId = catCache.get(catName) || defaultCatId;
-              
-              let subCat = await this.prisma.subCategory.findFirst({
+              const categoryId = catCache.get(catName);
+              if (!categoryId) continue; // unknown category — the row is reported below
+
+              const subCat = await this.prisma.subCategory.findFirst({
                 where: { name: subName, categoryId }
               });
-              
-              if (!subCat) {
-                subCat = await this.prisma.subCategory.create({
-                  data: { 
-                    name: subName, 
-                    slug: slugify(subName, { lower: true, strict: true }) || subName.toLowerCase(),
-                    categoryId 
-                  }
-                });
-              }
-              subCatCache.set(pair, subCat.id);
+              if (subCat) subCatCache.set(pair, subCat.id);
             }
-
-            // Default subcategory per category used
-            const defaultSubCatCache = new Map<string, string>(); // catId -> subId
 
             // 4. Process Products in Chunks
             const CHUNK_SIZE = 50;
@@ -2084,20 +2066,25 @@ export class AdminService {
 
                   const gstPercent = parseFloat(gstStr.replace('%', '')) || 0;
                   const mrp = parseFloat(mrpStr) || 0;
-                  const categoryId = (categoryName && catCache.get(categoryName)) || defaultCatId;
-                  
-                  let subCategoryId: string;
-                  const subCatLookupKey = `${categoryName || 'Uncategorized'}|${subCategoryName}`;
-                  if (subCategoryName && subCatCache.has(subCatLookupKey)) {
-                    subCategoryId = subCatCache.get(subCatLookupKey)!;
-                  } else {
-                    const cachedDefault = defaultSubCatCache.get(categoryId);
-                    if (cachedDefault) {
-                      subCategoryId = cachedDefault;
-                    } else {
-                      subCategoryId = await this.resolveDefaultSubCategory(categoryId, defaultSubCatCache);
-                      defaultSubCatCache.set(categoryId, subCategoryId);
-                    }
+                  if (!categoryName || !subCategoryName) {
+                    errors.push(`Row (${productName}): missing category or sub-category`);
+                    return;
+                  }
+
+                  const categoryId = catCache.get(categoryName);
+                  if (!categoryId) {
+                    errors.push(
+                      `Row (${productName}): Category '${categoryName}' does not exist — create it in Admin → Categories, then re-upload this row`,
+                    );
+                    return;
+                  }
+
+                  const subCategoryId = subCatCache.get(`${categoryName}|${subCategoryName}`);
+                  if (!subCategoryId) {
+                    errors.push(
+                      `Row (${productName}): Sub-category '${subCategoryName}' does not exist under '${categoryName}' — create it in Admin → Categories, then re-upload this row`,
+                    );
+                    return;
                   }
 
                   const slug = slugify(`${productName}-${manufacturer}`, { lower: true, strict: true }) || `p-${Date.now()}-${Math.random()}`;
@@ -2163,34 +2150,10 @@ export class AdminService {
     });
   }
 
-  private async resolveDefaultCategory(cache: Map<string, string>): Promise<string> {
-    const name = 'Uncategorized';
-    if (cache.has(name)) return (cache.get(name) as string);
-    let cat = await this.prisma.category.findUnique({ where: { name } });
-    if (!cat) {
-      cat = await this.prisma.category.create({
-        data: { name, slug: 'uncategorized' },
-      });
-    }
-    cache.set(name, cat.id);
-    return cat.id;
-  }
-
-  private async resolveDefaultSubCategory(categoryId: string, cache: Map<string, string>): Promise<string> {
-    const name = 'General';
-    const key = `DEFAULT:${categoryId}`;
-    if (cache.has(key)) return (cache.get(key) as string);
-    let subCat = await this.prisma.subCategory.findFirst({
-      where: { name, categoryId },
-    });
-    if (!subCat) {
-      subCat = await this.prisma.subCategory.create({
-        data: { name, slug: 'general', categoryId },
-      });
-    }
-    cache.set(key, subCat.id);
-    return subCat.id;
-  }
+  // `resolveDefaultCategory` ("Uncategorized") and `resolveDefaultSubCategory`
+  // ("General") were removed: they created categories as a side-effect of an
+  // import, which is exactly what this change stops. A row that names no
+  // category is now reported and skipped.
 
   async deleteUser(userId: string) {
     const user = await this.prisma.user.findUnique({

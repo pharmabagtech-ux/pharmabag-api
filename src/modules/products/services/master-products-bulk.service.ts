@@ -137,38 +137,31 @@ export class MasterProductsBulkService {
       chemMap = new Map(allChems.map(c => [c.name, c.id]));
     }
 
-    // 4. Bulk Insert Categories
+    // 4. Look up Categories — NEVER create them.
+    //
+    // This used to `createMany` whatever the sheet said, so one typo in one
+    // cell minted a real category, which immediately gets its own landing
+    // page, FAQ block and categories.xml entry with nothing gating it.
+    // Categories are made deliberately in Admin → Categories; a row naming one
+    // that does not exist is skipped and reported by the mapping check below.
     let catMap = new Map<string, string>();
     if (categoryNames.size > 0) {
       const catArray = Array.from(categoryNames);
+      const allCats: { id: string; name: string }[] = [];
       for (const chunk of this.chunkArray(catArray, 1000)) {
-        await this.prisma.category.createMany({
-          data: chunk.map(name => ({ name, slug: this.slugify(name) })),
-          skipDuplicates: true,
-        });
+        const batch = await this.prisma.category.findMany({ where: { name: { in: chunk } } });
+        allCats.push(...batch);
       }
-      const allCats = await this.prisma.category.findMany({ where: { name: { in: catArray } } });
       catMap = new Map(allCats.map(c => [c.name, c.id]));
     }
 
-    // 5. Bulk Insert SubCategories
-    const subCatCreates = Array.from(subCategoryData.values()).map(sub => {
-      const catId = catMap.get(sub.categoryName);
-      return catId ? { name: sub.name, slug: this.slugify(sub.name), categoryId: catId } : null;
-    }).filter(Boolean);
-
-    if (subCatCreates.length > 0) {
-      for (const chunk of this.chunkArray(subCatCreates, 1000)) {
-        await this.prisma.subCategory.createMany({
-          data: chunk as any,
-          skipDuplicates: true,
-        });
-      }
-    }
+    // 5. Look up SubCategories — likewise never created here.
     const subCatNames = Array.from(new Set(Array.from(subCategoryData.values()).map(s => s.name)));
-    const allSubCats = await this.prisma.subCategory.findMany({
-      where: { name: { in: subCatNames } }
-    });
+    const allSubCats: { id: string; name: string; categoryId: string }[] = [];
+    for (const chunk of this.chunkArray(subCatNames, 1000)) {
+      const batch = await this.prisma.subCategory.findMany({ where: { name: { in: chunk } } });
+      allSubCats.push(...batch);
+    }
     const subCatMap = new Map(allSubCats.map(c => [`${c.categoryId}-${c.name}`, c.id]));
 
     // 6. Bulk Prepare Master Products
@@ -214,7 +207,14 @@ export class MasterProductsBulkService {
       const subCategoryId = subCatMap.get(`${categoryId}-${subCatName}`);
 
       if (!categoryId || !subCategoryId) {
-        errors.push(`Row ${row.originalIndex + 2}: invalid category mapping (Main: '${catName}', Sub: '${subCatName}')`);
+        // Actionable, because the fix is a specific click: the uploader no
+        // longer invents the missing category on the operator's behalf.
+        const missing = !categoryId
+          ? `Category '${catName}' does not exist`
+          : `Sub-category '${subCatName}' does not exist under '${catName}'`;
+        errors.push(
+          `Row ${row.originalIndex + 2}: ${missing} — create it in Admin → Categories, then re-upload this row`,
+        );
         failCount++;
         continue;
       }
