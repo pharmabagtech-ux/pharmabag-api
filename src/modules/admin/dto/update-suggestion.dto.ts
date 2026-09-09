@@ -1,5 +1,31 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsString, IsOptional, IsNumber, IsBoolean, IsUUID, MaxLength } from 'class-validator';
+import { IsArray, IsString, IsOptional, IsNumber, IsBoolean, IsUUID, IsNotEmpty, MaxLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+/**
+ * One FAQ row. A real class, not an inline `{ question, answer }` type.
+ *
+ * main.ts builds the global pipe with `transform: true` and
+ * `enableImplicitConversion: true`, and a property whose only reflected type is
+ * `Array` has that type applied to its ELEMENTS too — every entry was
+ * constructed as an Array and, having no numeric keys, arrived as `[]`. Typed
+ * FAQs reached `master_products.faq` as `[[], []]`: the text was destroyed
+ * inside the pipe, before the service or Prisma ran. `@Type` is what stops the
+ * elements being coerced.
+ */
+export class ProductFaqEntryDto {
+  @ApiPropertyOptional({ example: 'What is the minimum order quantity?' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
+  question!: string;
+
+  @ApiPropertyOptional({ example: 'The MOQ is 100 units for this product.' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
+  answer!: string;
+}
 
 export class UpdateSuggestionDto {
   @ApiPropertyOptional({ example: 'Baconil 2mg' })
@@ -107,10 +133,12 @@ export class UpdateSuggestionDto {
   pageIntro?: string;
 
   /** `[{ question, answer }]` — replaces the generated FAQ list AND the FAQPage schema. */
-  @ApiPropertyOptional({ type: 'array', items: { type: 'object' } })
+  @ApiPropertyOptional({ type: [ProductFaqEntryDto] })
   @IsArray()
   @IsOptional()
-  faq?: { question: string; answer: string }[];
+  @ValidateNested({ each: true })
+  @Type(() => ProductFaqEntryDto)
+  faq?: ProductFaqEntryDto[];
 
   // ─── SEO head overrides (null/absent = generated defaults) ───
   // Empty string is MEANINGFUL here: it clears an override back to the
