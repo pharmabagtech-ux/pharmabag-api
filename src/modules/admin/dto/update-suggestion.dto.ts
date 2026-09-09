@@ -47,6 +47,49 @@ export class UpdateSuggestionDto {
   @IsOptional()
   isActive?: boolean;
 
+  // ─── Product page content (rendered on the storefront product page) ───
+  // These six columns already existed and are already rendered — directions
+  // and safety advice in the "About" block, the rest in the specifications
+  // table — but nothing except a CSV import could write them, so the words on
+  // a live product page could not be corrected by hand. Empty string clears a
+  // field to null, so the page drops the section rather than rendering blank.
+
+  @ApiPropertyOptional({ example: 'As directed by the physician.' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(4000)
+  directionsForUse?: string;
+
+  @ApiPropertyOptional({ example: 'Keep out of reach of children.' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(4000)
+  safetyAdvice?: string;
+
+  @ApiPropertyOptional({ example: 'Analgesic' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(200)
+  therapeuticClass?: string;
+
+  @ApiPropertyOptional({ example: 'Nausea, rash.' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(4000)
+  sideEffects?: string;
+
+  @ApiPropertyOptional({ example: '15 tablets' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(200)
+  packSize?: string;
+
+  @ApiPropertyOptional({ example: 'Store below 25°C in a dry place.' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(2000)
+  storageAndHandling?: string;
+
   // ─── SEO head overrides (null/absent = generated defaults) ───
   // Empty string is MEANINGFUL here: it clears an override back to the
   // generated head, so these use explicit undefined-checks in the service.
