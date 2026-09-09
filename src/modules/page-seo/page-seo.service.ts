@@ -157,4 +157,46 @@ export class PageSeoService {
     await this.prisma.pageSeo.deleteMany({ where: { path: normalized } });
     return { path: normalized, deleted: true };
   }
+
+  /**
+   * Follows a page that has moved.
+   *
+   * Rows are keyed by path, and renaming a category rewrites its slug — so
+   * without this, admin-written copy stays behind at a path nothing renders
+   * any more, and the renamed page silently drops back to generated wording.
+   * No error, no trace: the content simply stops appearing.
+   *
+   * Returns whether a row actually moved. Deliberately does nothing when:
+   *  - there is no row at `from` (the page was using generated copy anyway)
+   *  - a row already exists at `to` — someone has written copy for the new
+   *    path, and overwriting it to preserve the old page's would be the same
+   *    silent loss in the other direction
+   */
+  async movePath(from: string, to: string): Promise<boolean> {
+    const source = PageSeoService.normalizePath(from);
+    const target = PageSeoService.normalizePath(to);
+    if (source === target) return false;
+
+    const existing = await this.prisma.pageSeo.findUnique({
+      where: { path: source },
+    });
+    if (!existing) return false;
+
+    const occupied = await this.prisma.pageSeo.findUnique({
+      where: { path: target },
+    });
+    if (occupied) {
+      this.logger.warn(
+        `Not moving page content ${source} → ${target}: the destination already has its own row`,
+      );
+      return false;
+    }
+
+    await this.prisma.pageSeo.update({
+      where: { path: source },
+      data: { path: target },
+    });
+    this.logger.log(`Page content moved ${source} → ${target}`);
+    return true;
+  }
 }

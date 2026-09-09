@@ -118,3 +118,81 @@ describe('PageSeoService.upsert — on-page content fields', () => {
     expect(upsert.mock.calls[0][0].where).toEqual({ path: '/categories/ayurvedic' });
   });
 });
+
+/**
+ * Rows are keyed by path, and a category rename rewrites the slug — so without
+ * a move, admin-written copy stays behind at a path nothing renders any more
+ * and the renamed page silently reverts to generated wording.
+ */
+describe('PageSeoService.movePath', () => {
+  const makeService = (rows: Record<string, any>) => {
+    const prisma = {
+      pageSeo: {
+        findUnique: jest.fn(async ({ where }: any) => rows[where.path] ?? null),
+        update: jest.fn(async ({ where, data }: any) => {
+          const row = rows[where.path];
+          delete rows[where.path];
+          rows[data.path] = { ...row, path: data.path };
+          return rows[data.path];
+        }),
+      },
+    };
+    return { service: new PageSeoService(prisma as any), prisma, rows };
+  };
+
+  it('moves the row to the new path', async () => {
+    const { service, rows } = makeService({
+      '/categories/ayurvedic': { id: 'r1', path: '/categories/ayurvedic', h1: 'Mine' },
+    });
+
+    const moved = await service.movePath('/categories/ayurvedic', '/categories/ayurveda');
+
+    expect(moved).toBe(true);
+    expect(rows['/categories/ayurveda'].h1).toBe('Mine');
+    expect(rows['/categories/ayurvedic']).toBeUndefined();
+  });
+
+  it('does nothing when there is no row to move', async () => {
+    const { service, prisma } = makeService({});
+
+    const moved = await service.movePath('/categories/ayurvedic', '/categories/ayurveda');
+
+    expect(moved).toBe(false);
+    expect(prisma.pageSeo.update).not.toHaveBeenCalled();
+  });
+
+  /** Someone already wrote copy for the new path; theirs wins. */
+  it('leaves both rows alone when the destination is taken', async () => {
+    const { service, prisma, rows } = makeService({
+      '/categories/ayurvedic': { id: 'r1', path: '/categories/ayurvedic', h1: 'Old' },
+      '/categories/ayurveda': { id: 'r2', path: '/categories/ayurveda', h1: 'Already here' },
+    });
+
+    const moved = await service.movePath('/categories/ayurvedic', '/categories/ayurveda');
+
+    expect(moved).toBe(false);
+    expect(prisma.pageSeo.update).not.toHaveBeenCalled();
+    expect(rows['/categories/ayurveda'].h1).toBe('Already here');
+  });
+
+  it('normalises both paths, so a trailing slash still finds the row', async () => {
+    const { service, rows } = makeService({
+      '/categories/ayurvedic': { id: 'r1', path: '/categories/ayurvedic', h1: 'Mine' },
+    });
+
+    await service.movePath('/Categories/Ayurvedic/', '/categories/ayurveda/');
+
+    expect(rows['/categories/ayurveda']).toBeDefined();
+  });
+
+  it('does nothing when the path has not actually changed', async () => {
+    const { service, prisma } = makeService({
+      '/categories/ayurvedic': { id: 'r1', path: '/categories/ayurvedic' },
+    });
+
+    const moved = await service.movePath('/categories/ayurvedic', '/categories/ayurvedic');
+
+    expect(moved).toBe(false);
+    expect(prisma.pageSeo.update).not.toHaveBeenCalled();
+  });
+});

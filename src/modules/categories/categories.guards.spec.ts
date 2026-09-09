@@ -33,15 +33,29 @@ const makePrisma = (overrides: any = {}) => ({
   },
 });
 
-const makeService = (prisma: any, redirectFails = false) => {
+const makeService = (
+  prisma: any,
+  redirectFails = false,
+  moveFails = false,
+) => {
   const redirects = {
     create: jest.fn(async (input: any) => {
       if (redirectFails) throw new Error('redirects table on fire');
       return input;
     }),
   };
-  const service = new CategoriesService(prisma as any, redirects as any);
-  return { service, redirects };
+  const pageSeo = {
+    movePath: jest.fn(async (from: string, to: string) => {
+      if (moveFails) throw new Error('page_seo table on fire');
+      return { from, to, moved: true };
+    }),
+  };
+  const service = new CategoriesService(
+    prisma as any,
+    redirects as any,
+    pageSeo as any,
+  );
+  return { service, redirects, pageSeo };
 };
 
 describe('CategoriesService — delete guards', () => {
@@ -219,6 +233,73 @@ describe('CategoriesService — rename keeps the old URL alive', () => {
     ).resolves.toMatchObject({ slug: 'ayurveda' });
   });
 
+  /**
+   * `page_seo` rows are keyed by PATH, and a rename rewrites the slug. Without
+   * this, admin-written copy stays behind at the old path and the renamed page
+   * silently drops back to generated wording — data loss with no error, and it
+   * became far likelier once the content editor moved next to the rename
+   * button in the admin Categories tab.
+   */
+  it('takes the page content with it when a category is renamed', async () => {
+    const prisma = renaming();
+    const { service, pageSeo } = makeService(prisma);
+
+    await service.updateCategory('cat-1', { name: 'Ayurveda' } as any);
+
+    expect(pageSeo.movePath).toHaveBeenCalledWith(
+      '/categories/ayurvedic',
+      '/categories/ayurveda',
+    );
+  });
+
+  it('takes every sub-category page content with it too', async () => {
+    const prisma = renaming();
+    const { service, pageSeo } = makeService(prisma);
+
+    await service.updateCategory('cat-1', { name: 'Ayurveda' } as any);
+
+    const moves = pageSeo.movePath.mock.calls.map((c: any[]) => [c[0], c[1]]);
+    expect(moves).toContainEqual([
+      '/categories/ayurvedic/tablet',
+      '/categories/ayurveda/tablet',
+    ]);
+    expect(moves).toContainEqual([
+      '/categories/ayurvedic/syrup',
+      '/categories/ayurveda/syrup',
+    ]);
+  });
+
+  it('moves nothing when the slug did not change', async () => {
+    const prisma = makePrisma({
+      category: {
+        findUnique: jest.fn(async () => ({
+          id: 'cat-1',
+          name: 'Ayurvedic',
+          slug: 'ayurvedic',
+        })),
+        update: jest.fn(async () => ({
+          id: 'cat-1',
+          name: 'Ayurvedic',
+          slug: 'ayurvedic',
+        })),
+      },
+    });
+    const { service, pageSeo } = makeService(prisma);
+
+    await service.updateCategory('cat-1', { name: 'Ayurvedic' } as any);
+
+    expect(pageSeo.movePath).not.toHaveBeenCalled();
+  });
+
+  it('still renames when the content move fails', async () => {
+    const prisma = renaming();
+    const { service } = makeService(prisma, false, true);
+
+    await expect(
+      service.updateCategory('cat-1', { name: 'Ayurveda' } as any),
+    ).resolves.toMatchObject({ slug: 'ayurveda' });
+  });
+
   it('redirects a renamed sub-category under its parent slug', async () => {
     const prisma = makePrisma({
       subCategory: {
@@ -246,6 +327,34 @@ describe('CategoriesService — rename keeps the old URL alive', () => {
         from: '/categories/ayurvedic/tablet',
         to: '/categories/ayurvedic/tablets',
       }),
+    );
+  });
+
+  it('takes a renamed sub-category page content with it', async () => {
+    const prisma = makePrisma({
+      subCategory: {
+        findUnique: jest.fn(async () => ({
+          id: 'sub-1',
+          name: 'Tablet',
+          slug: 'tablet',
+          categoryId: 'cat-1',
+          category: { slug: 'ayurvedic' },
+        })),
+        update: jest.fn(async () => ({
+          id: 'sub-1',
+          name: 'Tablets',
+          slug: 'tablets',
+          category: { slug: 'ayurvedic' },
+        })),
+      },
+    });
+    const { service, pageSeo } = makeService(prisma);
+
+    await service.updateSubCategory('sub-1', { name: 'Tablets' } as any);
+
+    expect(pageSeo.movePath).toHaveBeenCalledWith(
+      '/categories/ayurvedic/tablet',
+      '/categories/ayurvedic/tablets',
     );
   });
 });
