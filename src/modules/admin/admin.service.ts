@@ -1840,6 +1840,8 @@ export class AdminService {
         metaTitle: orNull(dto.metaTitle),
         metaDescription: orNull(dto.metaDescription),
         ogImage: orNull(dto.ogImage),
+        pageIntro: orNull(dto.pageIntro),
+        faq: dto.faq?.length ? (dto.faq as Prisma.InputJsonValue) : Prisma.DbNull,
       },
       include: {
         category: { select: { id: true, name: true } },
@@ -1873,6 +1875,12 @@ export class AdminService {
         ...(dto.sideEffects !== undefined && { sideEffects: dto.sideEffects.trim() || null }),
         ...(dto.packSize !== undefined && { packSize: dto.packSize.trim() || null }),
         ...(dto.storageAndHandling !== undefined && { storageAndHandling: dto.storageAndHandling.trim() || null }),
+        ...(dto.pageIntro !== undefined && { pageIntro: dto.pageIntro.trim() || null }),
+        // An empty ARRAY clears the FAQ override so the generated list returns.
+        // Prisma.DbNull, not null: a nullable Json column needs the sentinel.
+        ...(dto.faq !== undefined && {
+          faq: dto.faq.length ? (dto.faq as Prisma.InputJsonValue) : Prisma.DbNull,
+        }),
         // SEO overrides: explicit undefined-checks because empty string is a
         // real instruction — "clear this override" — stored as null so the
         // storefront falls back to its generated head.

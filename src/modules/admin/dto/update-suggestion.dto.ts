@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsBoolean, IsUUID, MaxLength } from 'class-validator';
+import { IsArray, IsString, IsOptional, IsNumber, IsBoolean, IsUUID, MaxLength } from 'class-validator';
 
 export class UpdateSuggestionDto {
   @ApiPropertyOptional({ example: 'Baconil 2mg' })
@@ -89,6 +89,28 @@ export class UpdateSuggestionDto {
   @IsOptional()
   @MaxLength(2000)
   storageAndHandling?: string;
+
+  /**
+   * Replaces the generated "About <product>" paragraph.
+   *
+   * May carry `{{price}}`, `{{mrp}}`, `{{moq}}`, `{{name}}`,
+   * `{{manufacturer}}` and `{{composition}}`, resolved by the storefront at
+   * render — product copy quotes live commercial figures, and a typed-in rate
+   * would be wrong the next time a supplier changed it.
+   */
+  @ApiPropertyOptional({
+    example: '{{name}} is stocked at {{price}} per unit, MOQ {{moq}}.',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(4000)
+  pageIntro?: string;
+
+  /** `[{ question, answer }]` — replaces the generated FAQ list AND the FAQPage schema. */
+  @ApiPropertyOptional({ type: 'array', items: { type: 'object' } })
+  @IsArray()
+  @IsOptional()
+  faq?: { question: string; answer: string }[];
 
   // ─── SEO head overrides (null/absent = generated defaults) ───
   // Empty string is MEANINGFUL here: it clears an override back to the

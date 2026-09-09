@@ -1080,6 +1080,11 @@ export class ProductsService {
       metaTitle: m.metaTitle,
       metaDescription: m.metaDescription,
       ogImage: m.ogImage,
+      // Admin-set on-page content overrides; null = generated. This is a
+      // WHITELIST projection, so a column added to the model does not reach
+      // the storefront until it is named here.
+      pageIntro: m.pageIntro,
+      faq: m.faq,
       // Group seller listings, cheapest net price first (see
       // rankListingsByNetPrice — the DB's `orderBy: mrp` ties whenever
       // sellers share a printed MRP and only their discount differs).
