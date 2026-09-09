@@ -1803,6 +1803,16 @@ export class AdminService {
   async createSuggestion(dto: import('./dto/update-suggestion.dto').UpdateSuggestionDto) {
     const slug = slugify(`${dto.name}-${dto.manufacturer}`, { lower: true, strict: true });
     
+    /**
+     * Blank optional text is stored as NULL, not ''.
+     *
+     * The storefront tests these fields with `?.trim()` to decide whether to
+     * render a section, so an empty string would be indistinguishable from a
+     * value here — but it also makes "never filled in" and "deliberately
+     * cleared" look different in the database for no reason.
+     */
+    const orNull = (v?: string) => (v?.trim() ? v.trim() : null);
+
     return this.prisma.masterProduct.create({
       data: {
         name: dto.name || '',
@@ -1815,6 +1825,23 @@ export class AdminService {
         subCategoryId: dto.subCategoryId || '',
         slug,
         isActive: dto.isActive ?? true,
+        /*
+          Content and SEO on CREATE. These were previously dropped: create
+          shares UpdateSuggestionDto, so validation accepted them and then the
+          write ignored them — anything typed while adding a product vanished
+          without an error. That is why the SEO panel was edit-only.
+        */
+        directionsForUse: orNull(dto.directionsForUse),
+        safetyAdvice: orNull(dto.safetyAdvice),
+        therapeuticClass: orNull(dto.therapeuticClass),
+        sideEffects: orNull(dto.sideEffects),
+        packSize: orNull(dto.packSize),
+        storageAndHandling: orNull(dto.storageAndHandling),
+        metaTitle: orNull(dto.metaTitle),
+        metaDescription: orNull(dto.metaDescription),
+        ogImage: orNull(dto.ogImage),
+        pageIntro: orNull(dto.pageIntro),
+        faq: dto.faq?.length ? (dto.faq as Prisma.InputJsonValue) : Prisma.DbNull,
       },
       include: {
         category: { select: { id: true, name: true } },
@@ -1839,6 +1866,21 @@ export class AdminService {
         ...(dto.categoryId && { categoryId: dto.categoryId }),
         ...(dto.subCategoryId && { subCategoryId: dto.subCategoryId }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        // Product page content. Same undefined-check reasoning as the SEO
+        // fields below: these are rendered on the live product page, and an
+        // empty string means "remove this section", not "leave it alone".
+        ...(dto.directionsForUse !== undefined && { directionsForUse: dto.directionsForUse.trim() || null }),
+        ...(dto.safetyAdvice !== undefined && { safetyAdvice: dto.safetyAdvice.trim() || null }),
+        ...(dto.therapeuticClass !== undefined && { therapeuticClass: dto.therapeuticClass.trim() || null }),
+        ...(dto.sideEffects !== undefined && { sideEffects: dto.sideEffects.trim() || null }),
+        ...(dto.packSize !== undefined && { packSize: dto.packSize.trim() || null }),
+        ...(dto.storageAndHandling !== undefined && { storageAndHandling: dto.storageAndHandling.trim() || null }),
+        ...(dto.pageIntro !== undefined && { pageIntro: dto.pageIntro.trim() || null }),
+        // An empty ARRAY clears the FAQ override so the generated list returns.
+        // Prisma.DbNull, not null: a nullable Json column needs the sentinel.
+        ...(dto.faq !== undefined && {
+          faq: dto.faq.length ? (dto.faq as Prisma.InputJsonValue) : Prisma.DbNull,
+        }),
         // SEO overrides: explicit undefined-checks because empty string is a
         // real instruction — "clear this override" — stored as null so the
         // storefront falls back to its generated head.

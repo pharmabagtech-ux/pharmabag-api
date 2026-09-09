@@ -679,6 +679,13 @@ model MasterProduct {
   metaTitle       String?
   metaDescription String?
   ogImage         String?
+  /// Optional on-page content overrides. `pageIntro` replaces the generated
+  /// "About <product>" paragraph; `faq` replaces the generated FAQ list, which
+  /// also feeds the product page's FAQPage structured data. Kept here rather
+  /// than in the path-keyed page_seo table because product slugs get rewritten
+  /// by bulk uploads, which would orphan a path-keyed row.
+  pageIntro       String?
+  faq             Json?
 }
 
 model MasterProductImage {
