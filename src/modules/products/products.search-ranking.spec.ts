@@ -43,7 +43,12 @@ const keyOf = (where: any) => `${tierOf(where)}:${sellableOf(where)}`;
  * @param counts rows available per bucket key; anything unlisted is empty.
  */
 const makeService = (counts: Record<string, number>) => {
-  const calls: Array<{ key: string; skip: number; take: number }> = [];
+  const calls: Array<{
+    key: string;
+    skip: number;
+    take: number;
+    orderBy: any;
+  }> = [];
 
   const prisma = {
     masterProduct: {
@@ -57,9 +62,9 @@ const makeService = (counts: Record<string, number>) => {
         }
         return Promise.resolve(counts[key] ?? 0);
       }),
-      findMany: jest.fn(({ where, skip, take }: any) => {
+      findMany: jest.fn(({ where, skip, take, orderBy }: any) => {
         const key = keyOf(where);
-        calls.push({ key, skip, take });
+        calls.push({ key, skip, take, orderBy });
         const available = Math.max(0, (counts[key] ?? 0) - skip);
         const rows = Array.from({ length: Math.min(take, available) }, (_, i) => ({
           id: `${key}-${skip + i}`,
@@ -218,6 +223,36 @@ describe('ProductsService.findAll — search relevance', () => {
 
     expect(res.meta.total).toBe(10);
     expect(res.meta.totalPages).toBe(5);
+  });
+
+  /**
+   * The catalogue was bulk-uploaded, so thousands of masters share one
+   * `createdAt`. Postgres returns ties in whatever order it likes, and that
+   * order changes with LIMIT/OFFSET — the same query at two page sizes really
+   * did return different rows in positions 4-8 on live. Without a tiebreaker a
+   * product can sit on page 1 for one request and page 2 for the next, and
+   * paging can repeat or skip rows outright.
+   */
+  it('breaks ties on a stable column so equal timestamps cannot reshuffle', async () => {
+    const { service, calls } = makeService({ 'exact:sellable': 5 });
+
+    await service.findAll({ search: 'telekast', page: 1, limit: 2 } as any);
+
+    expect(calls[0].orderBy).toEqual([{ createdAt: 'desc' }, { id: 'asc' }]);
+  });
+
+  it('keeps the tiebreaker when a different sort is asked for', async () => {
+    const { service, calls } = makeService({ 'exact:sellable': 5 });
+
+    await service.findAll({
+      search: 'telekast',
+      page: 1,
+      limit: 2,
+      sortBy: 'name',
+      sortOrder: 'asc',
+    } as any);
+
+    expect(calls[0].orderBy).toEqual([{ name: 'asc' }, { id: 'asc' }]);
   });
 
   it('leaves an unsearched browse on the plain two-bucket ordering', async () => {
