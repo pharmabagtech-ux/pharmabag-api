@@ -14,6 +14,7 @@ import { BulkCreateCategoryDto } from './dto/bulk-category.dto';
 import { BulkCreateSubCategoryDto } from './dto/bulk-category.dto';
 import { QuerySubCategoryDto } from './dto/query-subcategory.dto';
 import { RedirectsService } from '../redirects/redirects.service';
+import { PageSeoService } from '../page-seo/page-seo.service';
 
 @Injectable()
 export class CategoriesService {
@@ -22,6 +23,7 @@ export class CategoriesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redirects: RedirectsService,
+    private readonly pageSeo: PageSeoService,
   ) {}
 
   /**
@@ -37,6 +39,20 @@ export class CategoriesService {
   ): Promise<void> {
     for (const { from, to } of pairs) {
       if (from === to) continue;
+      /*
+        The page's admin-written content has to follow it. `page_seo` rows are
+        keyed by path, so a rename would otherwise strand the copy at a path
+        nothing renders and the page would quietly revert to generated
+        wording. Tolerant like the redirect below it — housekeeping must never
+        cost the operator the rename they asked for.
+      */
+      try {
+        await this.pageSeo.movePath(from, to);
+      } catch (error) {
+        this.logger.warn(
+          `Could not move page content ${from} → ${to}: ${String(error)}`,
+        );
+      }
       try {
         // MANUAL rather than a new RedirectSource value: adding one means an
         // enum migration, and Postgres cannot ALTER TYPE ... ADD VALUE inside
