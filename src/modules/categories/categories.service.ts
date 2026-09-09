@@ -13,12 +13,42 @@ import { UpdateSubCategoryDto } from './dto/update-subcategory.dto';
 import { BulkCreateCategoryDto } from './dto/bulk-category.dto';
 import { BulkCreateSubCategoryDto } from './dto/bulk-category.dto';
 import { QuerySubCategoryDto } from './dto/query-subcategory.dto';
+import { RedirectsService } from '../redirects/redirects.service';
 
 @Injectable()
 export class CategoriesService {
   private readonly logger = new Logger(CategoriesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redirects: RedirectsService,
+  ) {}
+
+  /**
+   * Keeps a renamed page's old URL alive.
+   *
+   * Renaming rewrites the slug, so /categories/<old-slug> — a URL that ranks
+   * and that Google has indexed — starts 404ing. Tolerant BY CONTRACT, in the
+   * same spirit as the bulk uploader's rename hook: SEO housekeeping must
+   * never cost the operator the rename they asked for.
+   */
+  private async redirectRenamedPaths(
+    pairs: { from: string; to: string }[],
+  ): Promise<void> {
+    for (const { from, to } of pairs) {
+      if (from === to) continue;
+      try {
+        // MANUAL rather than a new RedirectSource value: adding one means an
+        // enum migration, and Postgres cannot ALTER TYPE ... ADD VALUE inside
+        // the transaction Prisma wraps migrations in.
+        await this.redirects.create({ from, to, source: 'MANUAL' });
+      } catch (error) {
+        this.logger.warn(
+          `Could not create rename redirect ${from} → ${to}: ${String(error)}`,
+        );
+      }
+    }
+  }
 
   // ──────────────────────────────────────────────
   // CATEGORIES
@@ -76,6 +106,27 @@ export class CategoriesService {
         where: { id },
         data,
       });
+
+      // A category slug is also the first segment of every sub-category URL
+      // beneath it, so one rename orphans the whole family unless each child
+      // gets its own redirect too.
+      if (updated.slug !== existing.slug) {
+        const children = await this.prisma.subCategory.findMany({
+          where: { categoryId: id },
+          select: { slug: true },
+        });
+        await this.redirectRenamedPaths([
+          {
+            from: `/categories/${existing.slug}`,
+            to: `/categories/${updated.slug}`,
+          },
+          ...children.map((child) => ({
+            from: `/categories/${existing.slug}/${child.slug}`,
+            to: `/categories/${updated.slug}/${child.slug}`,
+          })),
+        ]);
+      }
+
       this.logger.log(`Category updated: ${id}`);
       return updated;
     } catch (error) {
@@ -92,9 +143,38 @@ export class CategoriesService {
   async deleteCategory(id: string) {
     const existing = await this.prisma.category.findUnique({
       where: { id },
-      include: { _count: { select: { products: true, subCategories: true } } },
+      include: {
+        _count: {
+          select: { masterProducts: true, products: true, subCategories: true },
+        },
+      },
     });
     if (!existing) throw new NotFoundException('Category not found');
+
+    // These counts were already being fetched and then ignored. Deleting
+    // anyway is unsafe in two different ways: `MasterProduct.category` has no
+    // cascade, so Postgres restricts and the operator gets a raw foreign-key
+    // error; `SubCategory.category` IS onDelete: Cascade, so an otherwise
+    // empty category silently takes its sub-categories with it.
+    // Counted separately, not summed: a seller listing points AT a catalogue
+    // product, so adding the two would double-count the same shelf item and
+    // hand the operator a number that matches nothing they can see.
+    const { masterProducts, products, subCategories } = existing._count;
+    const blockers: string[] = [];
+    if (masterProducts > 0) {
+      blockers.push(`${masterProducts} catalogue product${masterProducts === 1 ? '' : 's'}`);
+    }
+    if (products > 0) {
+      blockers.push(`${products} seller listing${products === 1 ? '' : 's'}`);
+    }
+    if (subCategories > 0) {
+      blockers.push(`${subCategories} sub-categor${subCategories === 1 ? 'y' : 'ies'}`);
+    }
+    if (blockers.length > 0) {
+      throw new ConflictException(
+        `Cannot delete "${existing.name}" — ${blockers.join(' and ')} still use it. Move or remove them first.`,
+      );
+    }
 
     await this.prisma.category.delete({ where: { id } });
     this.logger.log(`Category deleted: ${id}`);
@@ -182,7 +262,10 @@ export class CategoriesService {
   }
 
   async updateSubCategory(id: string, dto: UpdateSubCategoryDto) {
-    const existing = await this.prisma.subCategory.findUnique({ where: { id } });
+    const existing = await this.prisma.subCategory.findUnique({
+      where: { id },
+      include: { category: { select: { slug: true } } },
+    });
     if (!existing) throw new NotFoundException('SubCategory not found');
 
     const data: Prisma.SubCategoryUpdateInput = {};
@@ -197,6 +280,21 @@ export class CategoriesService {
         data,
         include: { category: true },
       });
+
+      // Sub-category pages live under their parent's slug, which the rename
+      // does not touch — only the last segment moves.
+      if (updated.slug !== existing.slug) {
+        const parentSlug = updated.category?.slug ?? existing.category?.slug;
+        if (parentSlug) {
+          await this.redirectRenamedPaths([
+            {
+              from: `/categories/${parentSlug}/${existing.slug}`,
+              to: `/categories/${parentSlug}/${updated.slug}`,
+            },
+          ]);
+        }
+      }
+
       this.logger.log(`SubCategory updated: ${id}`);
       return updated;
     } catch (error) {
@@ -215,9 +313,25 @@ export class CategoriesService {
   async deleteSubCategory(id: string) {
     const existing = await this.prisma.subCategory.findUnique({
       where: { id },
-      include: { _count: { select: { products: true } } },
+      include: { _count: { select: { masterProducts: true, products: true } } },
     });
     if (!existing) throw new NotFoundException('SubCategory not found');
+
+    // Same ignored-count bug as deleteCategory. `masterProducts` matters most
+    // — the seller-listing count alone misses the 26,000-row catalogue.
+    const { masterProducts, products } = existing._count;
+    const blockers: string[] = [];
+    if (masterProducts > 0) {
+      blockers.push(`${masterProducts} catalogue product${masterProducts === 1 ? '' : 's'}`);
+    }
+    if (products > 0) {
+      blockers.push(`${products} seller listing${products === 1 ? '' : 's'}`);
+    }
+    if (blockers.length > 0) {
+      throw new ConflictException(
+        `Cannot delete "${existing.name}" — ${blockers.join(' and ')} still use it. Move or remove them first.`,
+      );
+    }
 
     await this.prisma.subCategory.delete({ where: { id } });
     this.logger.log(`SubCategory deleted: ${id}`);
