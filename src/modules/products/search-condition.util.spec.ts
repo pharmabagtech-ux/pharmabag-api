@@ -64,6 +64,38 @@ describe('buildSearchCondition', () => {
     expect(termsOf('B')).toEqual(['B']);
   });
 
+  /**
+   * Reported: searching "1 al 10 mg" never surfaced "1 AL 10mg Tablet".
+   * A lone "1" is not noise the way a lone "a" is — it is the first half of
+   * the brand name, and dropping it threw away the query's most selective
+   * token. Single letters stay dropped; single digits are kept.
+   */
+  it('keeps a single-digit word', () => {
+    expect(termsOf('1 AL 10 mg')).toEqual(['1', 'AL', '10', 'mg']);
+  });
+
+  it('still drops a single letter', () => {
+    expect(termsOf('telekast a')).toEqual(['telekast']);
+  });
+
+  /**
+   * The catalogue is inconsistent about the hyphen — the tablets are named
+   * "1 AL 10mg Tablet" but the syrups "1-AL Syrup". Typing the brand as it is
+   * printed on the pack must find both, so a hyphen separates words.
+   */
+  it('splits on a hyphen so the brand matches either spelling', () => {
+    expect(termsOf('1-AL')).toEqual(['1', 'AL']);
+  });
+
+  it('splits on a slash and a comma too', () => {
+    expect(termsOf('Galvus Met 50/1000mg')).toEqual([
+      'Galvus',
+      'Met',
+      '50',
+      '1000mg',
+    ]);
+  });
+
   it('returns null when there is nothing to search for', () => {
     expect(buildSearchCondition('')).toBeNull();
     expect(buildSearchCondition('   ')).toBeNull();

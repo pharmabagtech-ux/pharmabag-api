@@ -9,7 +9,10 @@ import { Prisma, ProductApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ACTIVE_LISTING } from '../../common/products/active-listing';
 import { calculateNetUnitPrice } from '../../common/pricing/ptr.util';
-import { buildSearchCondition } from './search-condition.util';
+import {
+  buildSearchCondition,
+  buildSearchRelevanceTiers,
+} from './search-condition.util';
 import { InventoryService } from './services/inventory.service';
 import { SearchIndexService } from './services/search-index.service';
 import { AnalyticsService } from './services/analytics.service';
@@ -693,55 +696,72 @@ export class ProductsService {
     };
     const gridOrderBy = { [effectiveSortBy]: sortOrder };
 
-    // Products a buyer can actually purchase come first. Most of the catalogue
-    // is admin-uploaded master data with no seller behind it, which shows as
-    // N/A for price, MOQ and rate — those belong after the sellable ones.
-    // Ordering by relation _count would not work: it cannot filter on active
-    // listings, so masters whose only listings are inactive would still rank
-    // first (269 masters have some listing, but only 100 have an active one).
-    const sellable: Prisma.MasterProductWhereInput = {
-      AND: [where, { products: { some: ACTIVE_LISTING } }],
-    };
-    const unsellable: Prisma.MasterProductWhereInput = {
-      AND: [where, { products: { none: ACTIVE_LISTING } }],
-    };
+    // Results come out in ordered buckets, read in turn until the page is full.
+    //
+    // Two rules stack, in this order:
+    //
+    // 1. RELEVANCE. A search is only a filter — it says which products MAY
+    //    appear, not which answers the question best. Without this, searching
+    //    "1 al 10 mg" buried "1 AL 10mg Tablet" at result 358 of 2,966, level
+    //    with every product whose composition merely contained "al", "10" and
+    //    "mg". A browse has no query, so it has a single, unranked tier and is
+    //    ordered exactly as before.
+    //
+    // 2. SELLABLE FIRST, WITHIN a tier. Most of the catalogue is admin-uploaded
+    //    master data with no seller behind it, which shows as N/A for price,
+    //    MOQ and rate — those belong after the sellable ones. But applying this
+    //    ABOVE relevance is what made the reported product unreachable: it has
+    //    no seller, so every priced near-miss outranked the product the buyer
+    //    had actually named.
+    //
+    // Ordering by relation _count would not work for rule 2: it cannot filter
+    // on active listings, so masters whose only listings are inactive would
+    // still rank first (269 masters have some listing, but only 100 an active
+    // one).
+    const tiers = buildSearchRelevanceTiers(query.search);
+    const buckets: Prisma.MasterProductWhereInput[] = (
+      tiers ?? [null]
+    ).flatMap((tier) => {
+      const base = tier ? [where, tier] : [where];
+      return [
+        { AND: [...base, { products: { some: ACTIVE_LISTING } }] },
+        { AND: [...base, { products: { none: ACTIVE_LISTING } }] },
+      ];
+    });
 
-    const [sellableTotal, total] = await Promise.all([
-      this.prisma.masterProduct.count({ where: sellable }),
-      this.prisma.masterProduct.count({ where }),
-    ]);
+    // The grand total is the unbucketed count, so paging is unaffected by how
+    // the results are divided up. Started here so it overlaps the walk below.
+    const totalPromise = this.prisma.masterProduct.count({ where });
 
-    let masters: any[];
+    const masters: any[] = [];
+    let remainingSkip = skip;
+    let needed = limit;
 
-    if (skip < sellableTotal) {
-      masters = await this.prisma.masterProduct.findMany({
-        where: sellable,
-        include: gridInclude,
-        orderBy: gridOrderBy,
-        skip,
-        take: limit,
-      });
+    for (const bucket of buckets) {
+      if (needed <= 0) break;
 
-      // This page straddles the boundary — top it up from the catalogue.
-      if (masters.length < limit) {
-        const filler = await this.prisma.masterProduct.findMany({
-          where: unsellable,
-          include: gridInclude,
-          orderBy: gridOrderBy,
-          skip: 0,
-          take: limit - masters.length,
-        });
-        masters = [...masters, ...filler];
+      const available = await this.prisma.masterProduct.count({ where: bucket });
+
+      // This whole bucket sits before the requested page.
+      if (remainingSkip >= available) {
+        remainingSkip -= available;
+        continue;
       }
-    } else {
-      masters = await this.prisma.masterProduct.findMany({
-        where: unsellable,
+
+      const rows = await this.prisma.masterProduct.findMany({
+        where: bucket,
         include: gridInclude,
         orderBy: gridOrderBy,
-        skip: skip - sellableTotal,
-        take: limit,
+        skip: remainingSkip,
+        take: needed,
       });
+
+      masters.push(...rows);
+      needed -= rows.length;
+      remainingSkip = 0;
     }
+
+    const total = await totalPromise;
 
     return {
       products: masters.map((m) => this.mapMasterToGrid(m)),
