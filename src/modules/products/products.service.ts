@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { Prisma, ProductApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { ACTIVE_LISTING } from '../../common/products/active-listing';
+import {
+  ACTIVE_LISTING,
+  PUBLIC_SELLER_SELECT,
+} from '../../common/products/active-listing';
 import { calculateNetUnitPrice } from '../../common/pricing/ptr.util';
 import {
   buildSearchCondition,
@@ -863,13 +866,19 @@ export class ProductsService {
             subCategory: true,
             batches: true,
             images: true,
-            seller: { select: { id: true, companyName: true, rating: true, city: true, state: true } },
+            seller: { select: PUBLIC_SELLER_SELECT },
         }
     });
 
     if (listing) {
         this.logger.log(`findOne: Found specific listing ${id}`);
-        return this.flattenProduct(listing as any);
+        // flattenProduct spreads the row through untouched, so the seller is
+        // re-projected here as well as in the query — two layers, because this
+        // one object is the whole of the buyer's exposure to seller identity.
+        return this.flattenProduct({
+            ...(listing as any),
+            seller: this.toPublicSeller((listing as any).seller),
+        });
     }
 
     // 2. Fallback: Check if 'id' is a Master Product (by ID or Slug)
@@ -880,7 +889,7 @@ export class ProductsService {
         products: {
             where: ACTIVE_LISTING,
             include: {
-                seller: { select: { id: true, companyName: true, rating: true, city: true, state: true } },
+                seller: { select: PUBLIC_SELLER_SELECT },
                 batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
                 images: true,
             },
@@ -1133,7 +1142,7 @@ export class ProductsService {
               discountMeta: p.discountMeta,
               stock,
               expiryDate: batches.length > 0 ? batches[0].expiryDate : null,
-              seller: p.seller,
+              seller: this.toPublicSeller(p.seller),
               images: p.images?.length > 0 ? p.images : m.images, // Fallback to master images
               moq: p.minimumOrderQuantity || 1,
           };
@@ -1331,7 +1340,7 @@ export class ProductsService {
             category: true,
             subCategory: true,
             batches: { where: { stock: { gt: 0 } }, orderBy: { expiryDate: 'asc' } },
-            seller: { select: { companyName: true, city: true, state: true, rating: true } },
+            seller: { select: PUBLIC_SELLER_SELECT },
             images: true,
           },
         },
@@ -1340,7 +1349,25 @@ export class ProductsService {
       take: 12, // limit to 12 featured products per slot
     });
 
-    return featured.map((f) => this.flattenProduct(f.product));
+    return featured.map((f) =>
+      this.flattenProduct({
+        ...(f.product as any),
+        seller: this.toPublicSeller((f.product as any).seller),
+      }),
+    );
+  }
+
+  /**
+   * The seller projection every buyer-facing payload passes through.
+   *
+   * See PUBLIC_SELLER_SELECT: the query already declines to fetch
+   * companyName/city/state, and this rebuilds the object field by field so a
+   * spread (flattenProduct) or a relation added to the include later cannot
+   * carry an identity out with it. Buyers get an opaque id and a rating.
+   */
+  private toPublicSeller(seller: any) {
+    if (!seller) return null;
+    return { id: seller.id ?? null, rating: seller.rating ?? null };
   }
 
   // ──────────────────────────────────────────────
