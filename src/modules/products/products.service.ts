@@ -91,26 +91,70 @@ export class ProductsService {
     if (!category) throw new NotFoundException('Category not found');
     if (!subCategory) throw new NotFoundException('Sub-category not found');
 
-    // Idempotent upsert: if externalId is provided and exists, update instead
+    /**
+     * Idempotent upsert: if externalId is provided and exists, update instead.
+     *
+     * The match is only an upsert when the row is ALREADY THIS SELLER'S.
+     * `externalId` is globally unique across the whole table, so a value that
+     * resolves to another seller's listing cannot become a second row — and
+     * silently rewriting theirs is exactly the ownership transfer this guard
+     * exists to stop. Rejecting is the only correct answer.
+     */
     if (normalized.externalId) {
       const existing = await this.prisma.product.findUnique({
         where: { externalId: normalized.externalId },
       });
       if (existing) {
+        if (existing.sellerId !== seller.id) {
+          this.logger.warn(
+            `Refused cross-seller upsert by externalId ${normalized.externalId}: ` +
+              `seller ${seller.id} tried to write product ${existing.id} owned by ${existing.sellerId}`,
+          );
+          throw new ForbiddenException(
+            'That external ID already belongs to another listing. Use a unique external ID for your own products.',
+          );
+        }
         this.logger.log(`Upsert: product with externalId ${normalized.externalId} exists, updating`);
-        return this.upsertExistingProduct(existing.id, seller.id, normalized, category, subCategory);
+        return this.upsertExistingProduct(existing.id, normalized, category, subCategory);
       }
     }
 
-    // Also check slug uniqueness for upsert
+    /**
+     * Same rule by slug — and this one was firing on an ordinary workflow, not
+     * only on a crafted request.
+     *
+     * `Product.slug` is deliberately NOT unique ("Allow duplicate slugs for
+     * seller-specific listings" below): two sellers listing the same medicine
+     * are supposed to be two rows. But the seller bulk-CSV importer sends no
+     * slug and no externalId, so `normalizeDto` derives the slug from the
+     * catalogue name and sets `isMigration: true` — which meant seller B
+     * uploading a CSV containing a product seller A already lists matched
+     * seller A's row and took it over: price, stock, images and all future
+     * orders, with the CSV reporting success.
+     *
+     * Matching another seller's row now simply falls through to creating this
+     * seller's own listing, which is what the marketplace model intends. The
+     * same-seller path is untouched.
+     */
     if (normalized.slug) {
       const existingBySlug = await this.prisma.product.findFirst({
         where: { slug: normalized.slug },
       });
       if (existingBySlug) {
         if (normalized.externalId || normalized.isMigration) {
-          this.logger.log(`Upsert: product with slug ${normalized.slug} exists, updating`);
-          return this.upsertExistingProduct(existingBySlug.id, seller.id, normalized, category, subCategory);
+          if (existingBySlug.sellerId === seller.id) {
+            this.logger.log(`Upsert: product with slug ${normalized.slug} exists, updating`);
+            return this.upsertExistingProduct(
+              existingBySlug.id,
+              normalized,
+              category,
+              subCategory,
+            );
+          }
+          this.logger.log(
+            `Slug ${normalized.slug} is owned by seller ${existingBySlug.sellerId}; ` +
+              `creating a separate listing for seller ${seller.id}`,
+          );
         }
         // Allow duplicate slugs for seller-specific listings
       }
@@ -260,9 +304,16 @@ export class ProductsService {
   /**
    * Upsert an existing product during migration/idempotent creation.
    */
+  /**
+   * Update an EXISTING listing in place.
+   *
+   * Takes no seller: the caller must already have proven the row belongs to
+   * the seller making the request. Dropping the parameter is the point — while
+   * it existed, this function would happily stamp a new owner onto someone
+   * else's listing, and both call sites did exactly that.
+   */
   private async upsertExistingProduct(
     productId: string,
-    sellerId: string,
     dto: CreateProductDto,
     category: { name: string },
     subCategory: { name: string },
@@ -290,7 +341,15 @@ export class ProductsService {
     const updated = await this.prisma.product.update({
       where: { id: productId },
       data: {
-        sellerId,
+        /**
+         * `sellerId` is deliberately NOT written here.
+         *
+         * Both call sites now prove the row already belongs to `sellerId`
+         * before calling, so assigning it is at best a no-op — and leaving it
+         * in the update is what made ownership transfer possible in the first
+         * place. Omitting it means no future caller can reassign a listing by
+         * routing through this function, whatever it gets wrong upstream.
+         */
         categoryId: dto.categoryId,
         subCategoryId: dto.subCategoryId,
         sku: dto.sku,
