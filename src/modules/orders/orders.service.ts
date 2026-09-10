@@ -233,19 +233,58 @@ export class OrdersService {
         },
       });
 
-      // 4d. Reduce ProductBatch stock (FIFO — earliest expiry first)
+      /**
+       * 4d. Reduce ProductBatch stock (FIFO — earliest expiry first).
+       *
+       * Two buyers could both take the last units. The stock check at the top
+       * of this method runs BEFORE the transaction, and the decrement here was
+       * unconditional — `{ decrement }` with no guard on the current value —
+       * working off `batch.stock` as it looked during that earlier read. Two
+       * checkouts for the last 100 units therefore both validated, both
+       * decremented, and the batch went negative: two orders accepted for
+       * goods that exist once.
+       *
+       * Every deduction is now a conditional update. `stock >= deduct` is part
+       * of the WHERE, so Postgres either matches the row and applies it or
+       * matches nothing; concurrent checkouts serialise on the row lock and the
+       * one that arrives second sees `count: 0` and moves to the next batch.
+       * If the line cannot be filled in full the whole transaction rolls back —
+       * no order, no partial decrement, cart untouched — so the faster checkout
+       * wins outright and the slower one is told exactly why.
+       *
+       * The batches are re-read inside the transaction because the numbers from
+       * the pre-flight read are precisely what went stale.
+       */
       for (const item of cart.items) {
         let remaining = item.quantity;
 
-        for (const batch of item.product.batches) {
+        // Same filter and order as the pre-flight read: in-stock batches,
+        // earliest expiry first.
+        const batches = await tx.productBatch.findMany({
+          where: { productId: item.product.id, stock: { gt: 0 } },
+          orderBy: { expiryDate: 'asc' },
+        });
+
+        for (const batch of batches) {
           if (remaining <= 0) break;
 
           const deduct = Math.min(remaining, batch.stock);
-          await tx.productBatch.update({
-            where: { id: batch.id },
+          const applied = await tx.productBatch.updateMany({
+            where: { id: batch.id, stock: { gte: deduct } },
             data: { stock: { decrement: deduct } },
           });
-          remaining -= deduct;
+
+          // count === 0 means another checkout took these units between the
+          // read above and this write. Leave `remaining` alone, try the next.
+          if (applied.count === 1) remaining -= deduct;
+        }
+
+        if (remaining > 0) {
+          throw new BadRequestException(
+            `Stock for "${item.product.name}" ran out while your order was being placed. ` +
+              `${remaining} of the ${item.quantity} units you ordered are no longer available. ` +
+              `Please refresh your bag and try again.`,
+          );
         }
       }
 
