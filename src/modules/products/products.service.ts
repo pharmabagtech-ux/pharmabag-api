@@ -684,6 +684,13 @@ export class ProductsService {
       products: {
         where: ACTIVE_LISTING,
         select: {
+          // Without this the grid shaper's `bestListingId` resolved to
+          // undefined and was dropped from the JSON entirely, so every
+          // storefront grid added the MASTER id to the bag while the product
+          // page and quick view added the LISTING id. The same product could
+          // therefore occupy two cart lines, and checkout then rejected the
+          // second one with a raw "Use PATCH /api/cart/item/:id" message.
+          id: true,
           mrp: true,
           gstPercent: true,
           discountType: true,
