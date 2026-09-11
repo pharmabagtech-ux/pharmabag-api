@@ -16,6 +16,14 @@ interface MastersIndiaConfig {
 const MAX_RETRIES = 3;
 const TIMEOUT_MS = 10_000;
 
+/**
+ * PAN is personally identifiable and these logs are shipped off the box. The
+ * last four characters are enough to match a request to a support report.
+ */
+function maskPan(pan: string): string {
+  return pan.length > 4 ? `${'*'.repeat(pan.length - 4)}${pan.slice(-4)}` : '****';
+}
+
 @Injectable()
 export class IdfyService {
   private readonly logger = new Logger(IdfyService.name);
@@ -56,6 +64,27 @@ export class IdfyService {
   // PAN VERIFICATION
   // ─────────────────────────────────────────────────
 
+  /**
+   * Verify a PAN.
+   *
+   * Two different Masters India endpoints are involved, and confusing them is
+   * what broke this:
+   *
+   *   /searchpan  — "Search by PAN". Returns the GSTINs registered against the
+   *                 PAN. A PAN with no GST registration has no rows, so this
+   *                 answers "nothing found" for a perfectly valid PAN.
+   *   /pandetail  — "PAN Details". The actual PAN check: holder name, entity
+   *                 type and PAN status, straight from the PAN database, with
+   *                 no GST involvement at all.
+   *
+   * Only the first was ever called, which is why an individual or a business
+   * without GST registration could not complete onboarding.
+   *
+   * The GST-registry lookup still runs FIRST and is untouched, so every PAN
+   * that verifies today keeps verifying, with the same legal name (the GST
+   * legal name, which is the better business name when one exists) and the
+   * same linked GSTIN. The PAN check is only reached when that finds nothing.
+   */
   async verifyPan(panNumber: string): Promise<IdfyVerificationResponseDto> {
     if (!this.config) {
       return {
@@ -64,6 +93,8 @@ export class IdfyService {
         verifiedDocumentType: null
       };
     }
+
+    const pan = (panNumber ?? '').trim().toUpperCase();
 
     try {
       // Step 1: Get/refresh access token
@@ -76,12 +107,20 @@ export class IdfyService {
         };
       }
 
-      // Step 2: Call PAN search API
-      const url = `${this.config.apiBaseUrl}/searchpan?pan=${panNumber}`;
-      this.logger.log(`Calling PAN API: ${url}`);
-      const response = await this.makeGetRequest(url, accessToken);
-      this.logger.log(`PAN API Response: ${JSON.stringify(response)}`);
-      return this.parsePanResponse(response, panNumber);
+      // Step 2: GST registry lookup — unchanged, and still first.
+      const viaGstRegistry = await this.lookupPanInGstRegistry(pan, accessToken);
+      if (viaGstRegistry) return viaGstRegistry;
+
+      // Step 3: The PAN itself. Reached when the PAN carries no GST
+      // registration, which used to be reported as an invalid PAN.
+      const viaPanRecord = await this.lookupPanRecord(pan, accessToken);
+      if (viaPanRecord) return viaPanRecord;
+
+      return {
+        status: false,
+        message: 'Pan Number is invalid',
+        verifiedDocumentType: null
+      };
     } catch (err: any) {
       this.logger.error(`PAN verification failed: ${err.message}`);
       return {
@@ -89,6 +128,50 @@ export class IdfyService {
         message: 'Pan Number is invalid',
         verifiedDocumentType: null
       };
+    }
+  }
+
+  /**
+   * GSTINs registered against this PAN. Null means "found nothing", which is
+   * not the same as "the PAN is bad" — that distinction is the whole fix.
+   *
+   * Swallows its own failure so that one endpoint being down or rejecting a
+   * request cannot stop the other from answering.
+   */
+  private async lookupPanInGstRegistry(
+    pan: string,
+    accessToken: string,
+  ): Promise<IdfyVerificationResponseDto | null> {
+    try {
+      const url = `${this.config!.apiBaseUrl}/searchpan?pan=${pan}`;
+      this.logger.log(`Calling PAN-to-GST API for ${maskPan(pan)}`);
+      const response = await this.makeGetRequest(url, accessToken);
+      const parsed = this.parsePanResponse(response, pan);
+      return parsed.status ? parsed : null;
+    } catch (err: any) {
+      // A PAN with no GST registration can also come back as a 4xx here.
+      this.logger.log(
+        `PAN-to-GST lookup found nothing for ${maskPan(pan)}: ${err.message}`,
+      );
+      return null;
+    }
+  }
+
+  /** The PAN record itself — no GST registration required. */
+  private async lookupPanRecord(
+    pan: string,
+    accessToken: string,
+  ): Promise<IdfyVerificationResponseDto | null> {
+    try {
+      const url = `${this.config!.apiBaseUrl}/pandetail?pan=${pan}`;
+      this.logger.log(`Calling PAN details API for ${maskPan(pan)}`);
+      const response = await this.makeGetRequest(url, accessToken);
+      return this.parsePanDetailResponse(response);
+    } catch (err: any) {
+      this.logger.error(
+        `PAN details lookup failed for ${maskPan(pan)}: ${err.message}`,
+      );
+      return null;
     }
   }
 
@@ -287,6 +370,57 @@ export class IdfyService {
       status: true,
       legalName,
       gstNumber: gstNumber || undefined,
+      message: 'Pan Number is valid',
+      verifiedDocumentType: 'ind_pan',
+    };
+  }
+
+  /**
+   * Reads the /pandetail payload:
+   *
+   *   { error: false, data: { status: {...}, response: {
+   *       number, name, typeOfHolder, isIndividual, isValid,
+   *       firstName, middleName, lastName, title, panStatusCode, panStatus, ...
+   *   } } }
+   *
+   * Returns null rather than a failure object so the caller can tell "this
+   * endpoint could not confirm it" from "this PAN is bad".
+   *
+   * A PAN is accepted only when the provider says it is valid. A record that
+   * exists but reads INVALID or DEACTIVATED is not a pass.
+   */
+  private parsePanDetailResponse(
+    response: any,
+  ): IdfyVerificationResponseDto | null {
+    if (!response || response.error === true) return null;
+
+    const record = response.data?.response ?? response.response ?? response.data;
+    if (!record || typeof record !== 'object') return null;
+
+    const statusText = String(record.panStatus ?? '').toUpperCase();
+    const isValid =
+      record.isValid === true ||
+      statusText === 'VALID' ||
+      statusText === 'EXISTING AND VALID';
+
+    if (!isValid) return null;
+
+    const assembled = [record.firstName, record.middleName, record.lastName]
+      .filter((part: unknown) => typeof part === 'string' && part.trim())
+      .join(' ')
+      .trim();
+
+    const legalName =
+      (typeof record.name === 'string' && record.name.trim()) ||
+      assembled ||
+      record.fullName ||
+      'N/A';
+
+    return {
+      status: true,
+      legalName,
+      // Deliberately absent: this PAN has no GST registration behind it, and
+      // sending an empty string would put one in the buyer's GST field.
       message: 'Pan Number is valid',
       verifiedDocumentType: 'ind_pan',
     };
