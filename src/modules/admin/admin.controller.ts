@@ -38,6 +38,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadedFile, UseInterceptors } from '@nestjs/common';
 import { AdminQuerySuggestionsDto } from './dto/query-suggestions.dto';
 import { UpdateSuggestionDto } from './dto/update-suggestion.dto';
+import {
+  describeCapabilities,
+  parseAdminPermissions,
+} from '../../common/admin-access/admin-permissions';
 
 @ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
@@ -46,6 +50,31 @@ import { UpdateSuggestionDto } from './dto/update-suggestion.dto';
 @Roles(Role.ADMIN)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
+
+  // ═══════════════════════════════════════════════════
+  // WHAT MAY I DO
+  // ═══════════════════════════════════════════════════
+
+  /**
+   * The caller's own resolved capabilities.
+   *
+   * The admin app renders its sidebar and its route guard from this, so what a
+   * screen offers and what the API will actually allow come from one source
+   * and cannot drift apart. Sits under the dashboard area on purpose: every
+   * admin, however scoped, must be able to ask what they are allowed to do.
+   */
+  @Get('dashboard/my-permissions')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Resolved permissions for the signed-in admin' })
+  @ApiResponse({ status: 200, description: 'Capabilities returned' })
+  async getMyPermissions(@CurrentUser() user: any) {
+    return {
+      message: 'Permissions retrieved successfully',
+      data: describeCapabilities(
+        parseAdminPermissions(user?.adminProfile?.permissions),
+      ),
+    };
+  }
 
   // ═══════════════════════════════════════════════════
   // DASHBOARD
