@@ -2200,25 +2200,80 @@ export class AdminService {
 
     if (!user) throw new NotFoundException('User not found');
 
+    /**
+     * Refuse to hard-delete anyone who has traded.
+     *
+     * Deleting a user used to destroy the COUNTERPARTY'S records, in both
+     * directions, and the old code said so in a comment ("might leave orders
+     * empty or with incorrect totals"):
+     *
+     *  - Deleting a SELLER ran `orderItem.deleteMany({ sellerId })`, which
+     *    pulled that seller's lines out of OTHER BUYERS' completed orders —
+     *    those orders keep their total but lose the items that justify it — and
+     *    `sellerSettlement.deleteMany`, erasing the record of money paid or
+     *    owed.
+     *  - Deleting a BUYER cascades `User → Order → OrderItem`, so every
+     *    seller's record of those sales disappears; the old code additionally
+     *    pre-deleted the attached settlements purely to unblock that cascade,
+     *    erasing what sellers were owed.
+     *
+     * Financial history is not the deleted user's alone to remove, so a user
+     * who has traded can no longer be hard-deleted at all. Blocking them is the
+     * right tool and already exists (`PATCH /admin/users/:id/block`).
+     *
+     * Users with no trading history — abandoned signups, test accounts,
+     * duplicates, which is what this button is actually used for — delete
+     * exactly as they did before.
+     */
+    const [orderCount, orderItemCount, settlementCount] = await Promise.all([
+      this.prisma.order.count({ where: { buyerId: userId } }),
+      user.sellerProfile
+        ? this.prisma.orderItem.count({ where: { sellerId: user.sellerProfile.id } })
+        : Promise.resolve(0),
+      user.sellerProfile
+        ? this.prisma.sellerSettlement.count({ where: { sellerId: user.sellerProfile.id } })
+        : Promise.resolve(0),
+    ]);
+
+    const blockers: string[] = [];
+    if (orderCount > 0) {
+      blockers.push(`${orderCount} order${orderCount === 1 ? '' : 's'} placed`);
+    }
+    if (orderItemCount > 0) {
+      blockers.push(
+        `${orderItemCount} order line${orderItemCount === 1 ? '' : 's'} sold to other buyers`,
+      );
+    }
+    if (settlementCount > 0) {
+      blockers.push(
+        `${settlementCount} settlement record${settlementCount === 1 ? '' : 's'}`,
+      );
+    }
+
+    if (blockers.length > 0) {
+      this.logger.warn(
+        `Refused hard delete of user ${userId}: ${blockers.join(', ')}`,
+      );
+      throw new BadRequestException(
+        `This account cannot be deleted because it has ${blockers.join(', ')}. ` +
+          `Deleting it would remove those records from the other party's order and payment history. ` +
+          `Block the account instead if you need to stop it being used.`,
+      );
+    }
+
     this.logger.log(`Starting hard delete for user ${userId} (Role: ${user.role})`);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // 1. Handle Seller-specific blocks
-        if (user.sellerProfile) {
-          // Delete settlements where this seller is the recipient
-          await tx.sellerSettlement.deleteMany({
-            where: { sellerId: user.sellerProfile.id },
-          });
+        /*
+          No seller branch any more. The two statements that lived here only
+          existed to clear other people's order lines and settlements out of
+          the way, and the guard above proves there are none. If that guard
+          ever develops a hole, the foreign keys now refuse the delete — a
+          failed request is a far better outcome than silent corruption.
+        */
 
-          // Delete order items where this seller is involved (prevents blocking SellerProfile/Product deletion)
-          // Note: This might leave orders "empty" or with incorrect totals, but hard delete is requested.
-          await tx.orderItem.deleteMany({
-            where: { sellerId: user.sellerProfile.id },
-          });
-        }
-
-        // 2. Handle Buyer-specific blocks
+        // Buyer-owned records that are genuinely this user's to remove.
         if (user.buyerProfile) {
           // Delete custom orders
           await tx.customOrder.deleteMany({
@@ -2230,20 +2285,6 @@ export class AdminService {
             where: { buyerId: user.buyerProfile.id },
             data: { buyerId: null },
           });
-
-          // Handle settlements blocked by buyer's orders
-          // When User is deleted, Order is deleted (Cascade), which deletes OrderItem (Cascade).
-          // But OrderItem is referenced by SellerSettlement without cascade.
-          const buyerOrders = await tx.order.findMany({
-            where: { buyerId: userId },
-            include: { items: true },
-          });
-          const orderItemIds = buyerOrders.flatMap((o) => o.items.map((i) => i.id));
-          if (orderItemIds.length > 0) {
-            await tx.sellerSettlement.deleteMany({
-              where: { orderItemId: { in: orderItemIds } },
-            });
-          }
         }
 
         // 3. Handle Admin-specific blocks
