@@ -1352,6 +1352,40 @@ export class AdminService {
   // NOTIFICATIONS
   // ════════════════════════════════════════════════════════
 
+  /**
+   * Send one notification to one user.
+   *
+   * The admin panel has called this on every approval since it was built —
+   * "Account Verified! Your business profile has been verified." — but no such
+   * route existed, so the request 404'd every time. The caller wraps it in a
+   * try/catch, so nothing ever looked broken and no approved buyer or seller
+   * has ever received it.
+   *
+   * Stores only `message`, exactly as the broadcast path does: the
+   * notifications table has no title or type column.
+   */
+  async notifyUser(
+    userId: string,
+    dto: import('./dto/admin-notify-user.dto').AdminNotifyUserDto,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const notification = await this.prisma.notification.create({
+      data: { userId: user.id, message: dto.message },
+    });
+
+    this.logger.log(`Notification sent to user ${userId}`);
+
+    return { success: true, notificationId: notification.id };
+  }
+
   async adminBroadcastNotification(adminUserId: string, dto: import('./dto/admin-broadcast-notification.dto').AdminBroadcastNotificationDto) {
     const { target, message } = dto;
     let whereClause: Prisma.UserWhereInput = { status: 'APPROVED' };

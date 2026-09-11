@@ -42,6 +42,7 @@ import {
   describeCapabilities,
   parseAdminPermissions,
 } from '../../common/admin-access/admin-permissions';
+import { AdminNotifyUserDto } from './dto/admin-notify-user.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
@@ -450,6 +451,24 @@ export class AdminController {
   // ═══════════════════════════════════════════════════
   // NOTIFICATIONS
   // ═══════════════════════════════════════════════════
+
+  /**
+   * Declared BEFORE the broadcast routes purely for readability; the paths do
+   * not overlap. The admin panel has posted here on every user approval since
+   * it was built, against a route that did not exist.
+   */
+  @Post('notifications/user/:userId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send a notification to one user' })
+  @ApiResponse({ status: 200, description: 'Notification sent successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async notifyUser(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: AdminNotifyUserDto,
+  ) {
+    const data = await this.adminService.notifyUser(userId, dto);
+    return { message: 'Notification sent successfully', data };
+  }
 
   @Post('notifications/broadcast')
   @HttpCode(HttpStatus.OK)
