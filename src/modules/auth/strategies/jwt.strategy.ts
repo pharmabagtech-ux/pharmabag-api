@@ -21,13 +21,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     super({
-      jwtFromRequest: (req) => {
-        const token = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
-        console.log('--- JWT STRATEGY ---');
-        console.log('Incoming Auth Header:', req.headers.authorization);
-        console.log('Extracted Token:', token);
-        return token;
-      },
+      // Was logging the raw Authorization header and the extracted token on
+      // every authenticated request, writing live session tokens into the
+      // container logs in plain text.
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: secret,
     });
@@ -44,6 +41,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         status: true,
         createdAt: true,
         updatedAt: true,
+        // Read per request rather than baked into the token, so revoking an
+        // admin's access takes effect immediately instead of whenever their
+        // token happens to expire. This query already ran; only admins have a
+        // row here at all.
+        adminProfile: { select: { permissions: true } },
       },
     });
 
