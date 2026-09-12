@@ -1175,7 +1175,7 @@ export class AdminService {
       if (dateTo) (where.createdAt as any).lte = new Date(dateTo);
     }
 
-    const [data, total] = await Promise.all([
+    const [data, total, pendingAgg, paidAgg] = await Promise.all([
       this.prisma.sellerSettlement.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -1194,9 +1194,35 @@ export class AdminService {
         take: limit,
       }),
       this.prisma.sellerSettlement.count({ where }),
+      /**
+       * Totals over the WHOLE filtered set, not the page.
+       *
+       * The admin settlements screen was summing the twenty rows it happened
+       * to be showing, so "Pending Payouts" reported a fraction of what
+       * sellers were actually owed — and the figure changed as the admin
+       * paged. Money owed cannot be a per-page number.
+       */
+      this.prisma.sellerSettlement.aggregate({
+        where: { ...where, payoutStatus: { not: 'PAID' } },
+        _sum: { amount: true },
+      }),
+      this.prisma.sellerSettlement.aggregate({
+        where: { ...where, payoutStatus: 'PAID' },
+        _sum: { amount: true },
+      }),
     ]);
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      summary: {
+        pendingAmount: pendingAgg._sum.amount ?? 0,
+        paidAmount: paidAgg._sum.amount ?? 0,
+      },
+    };
   }
 
   async markSettlementPaid(settlementId: string, payoutReference: string, paymentProofUrl?: string) {
