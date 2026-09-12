@@ -65,6 +65,8 @@ export class AdminService {
         totalSellers,
         totalOrders,
         revenueResult,
+        pendingRevenueResult,
+        commissionResult,
         pendingOrders,
         pendingPayments,
         pendingSettlements,
@@ -79,9 +81,42 @@ export class AdminService {
         this.prisma.user.count({ where: { role: 'BUYER', ...dateWhere } }),
         this.prisma.user.count({ where: { role: 'SELLER', ...dateWhere } }),
         this.prisma.order.count({ where: dateWhere }),
+        /**
+         * Money actually collected.
+         *
+         * This used to aggregate every order in the window with no filter at
+         * all, so a cancelled order inflated the headline figure permanently
+         * and an order nobody had paid for counted exactly like a settled one.
+         * Cancelled and returned orders are now excluded and the payment has
+         * to have succeeded.
+         *
+         * `pendingRevenue` below carries what that number was quietly folding
+         * in, so nothing vanishes from the page — it just stops being counted
+         * as revenue.
+         */
         this.prisma.order.aggregate({
-          where: dateWhere,
+          where: {
+            ...dateWhere,
+            orderStatus: { notIn: [OrderStatus.CANCELLED, OrderStatus.RETURNED] },
+            paymentStatus: PaymentStatus.SUCCESS,
+          },
           _sum: { totalAmount: true },
+        }),
+        // Live orders still awaiting payment — expected, not earned.
+        this.prisma.order.aggregate({
+          where: {
+            ...dateWhere,
+            orderStatus: { notIn: [OrderStatus.CANCELLED, OrderStatus.RETURNED] },
+            paymentStatus: { not: PaymentStatus.SUCCESS },
+          },
+          _sum: { totalAmount: true },
+        }),
+        // What the platform itself earns: the commission already booked on
+        // settlement rows. The figure above is what buyers paid sellers, which
+        // is turnover flowing through the platform, not its income.
+        this.prisma.sellerSettlement.aggregate({
+          where: dateWhere,
+          _sum: { commission: true },
         }),
         this.prisma.order.count({
           where: { orderStatus: OrderStatus.PLACED, ...dateWhere },
@@ -141,6 +176,8 @@ export class AdminService {
         blockedUsers,
         totalOrders,
         totalRevenue: revenueResult?._sum?.totalAmount ?? 0,
+        pendingRevenue: pendingRevenueResult?._sum?.totalAmount ?? 0,
+        platformCommission: commissionResult?._sum?.commission ?? 0,
         totalProducts,
         pendingOrders,
         pendingPayments,
