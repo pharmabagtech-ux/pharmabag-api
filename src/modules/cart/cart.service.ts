@@ -214,12 +214,16 @@ export class CartService {
                 isActive: true,
                 deletedAt: true,
                 images: { select: { id: true, url: true }, take: 1 },
+                /**
+                 * Buyers never learn who the seller is — PharmaBag is the
+                 * counterparty, and a supplier's name plus their city is
+                 * enough for a buyer to go around the marketplace. The bag
+                 * was returning all three to every logged-in buyer. The id is
+                 * an opaque UUID and the rating carries no identity.
+                 */
                 seller: {
                   select: {
                     id: true,
-                    companyName: true,
-                    city: true,
-                    state: true,
                     rating: true,
                   },
                 },
