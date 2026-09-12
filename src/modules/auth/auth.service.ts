@@ -16,6 +16,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { REDIS_CLIENT } from '../../config/redis.config';
 import { Role, UserStatus } from '@prisma/client';
 import { OtpSmsService } from './services/otp-sms.service';
+import { resolveSessionMaxAgeHours, isSessionExpired } from '../../common/auth/session.util';
 
 // ─── Constants ───────────────────────────────────────
 
@@ -397,7 +398,20 @@ export class AuthService {
         throw new UnauthorizedException('Account is blocked');
       }
 
-      return this.generateTokens(user.id, user.role);
+      // Absolute session ceiling (minimum 24h, see session.util.ts). A
+      // missing `sessionStartedAt` means this refresh token predates the
+      // claim - never expire on that alone, generateTokens below stamps a
+      // fresh one so the session self-heals onto a real 24h clock.
+      const sessionStartedAt: number | undefined = payload.sessionStartedAt;
+      const maxAgeHours = resolveSessionMaxAgeHours(
+        this.configService.get<number>('SESSION_MAX_AGE_HOURS'),
+      );
+
+      if (isSessionExpired(sessionStartedAt, maxAgeHours)) {
+        throw new UnauthorizedException('Session expired. Please log in again.');
+      }
+
+      return this.generateTokens(user.id, user.role, sessionStartedAt);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -415,8 +429,16 @@ export class AuthService {
     return String(num + 100000);
   }
 
-  private async generateTokens(userId: string, role: Role): Promise<TokenPair> {
-    const payload = { sub: userId, role };
+  private async generateTokens(
+    userId: string,
+    role: Role,
+    sessionStartedAt: number = Date.now(),
+  ): Promise<TokenPair> {
+    // Stamped once at the original login and carried forward unchanged by
+    // every refresh (see refreshToken above) - this is what lets the
+    // absolute 24h session ceiling survive the access token's much shorter,
+    // repeatedly-renewed expiry.
+    const payload = { sub: userId, role, sessionStartedAt };
 
     const accessExpiresIn = this.configService.get<string>('JWT_ACCESS_EXPIRES', '15m');
     const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES', '7d');
