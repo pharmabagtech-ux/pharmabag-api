@@ -20,6 +20,7 @@ import {
 } from '@prisma/client';
 import { StorageService, sanitizeImageBaseName } from '../storage/storage.service';
 import { PrismaService } from '../../database/prisma.service';
+import { faqForStorage } from '../../common/products/faq';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { QuerySellersDto } from './dto/query-sellers.dto';
 import { AdminQueryProductsDto } from './dto/query-products.dto';
@@ -1875,7 +1876,9 @@ export class AdminService {
         metaDescription: orNull(dto.metaDescription),
         ogImage: orNull(dto.ogImage),
         pageIntro: orNull(dto.pageIntro),
-        faq: dto.faq?.length ? (dto.faq as Prisma.InputJsonValue) : Prisma.DbNull,
+        // Only rows that carry a question AND an answer are stored: the
+        // storefront maps over this list and would throw on a blank row.
+        faq: (faqForStorage(dto.faq) as unknown as Prisma.InputJsonValue) ?? Prisma.DbNull,
       },
       include: {
         category: { select: { id: true, name: true } },
@@ -1912,8 +1915,11 @@ export class AdminService {
         ...(dto.pageIntro !== undefined && { pageIntro: dto.pageIntro.trim() || null }),
         // An empty ARRAY clears the FAQ override so the generated list returns.
         // Prisma.DbNull, not null: a nullable Json column needs the sentinel.
+        // Rows missing a question or an answer are dropped rather than stored —
+        // the product page maps over this list and applyTokens() throws on a
+        // blank entry, so one bad row would take the page down.
         ...(dto.faq !== undefined && {
-          faq: dto.faq.length ? (dto.faq as Prisma.InputJsonValue) : Prisma.DbNull,
+          faq: (faqForStorage(dto.faq) as unknown as Prisma.InputJsonValue) ?? Prisma.DbNull,
         }),
         // SEO overrides: explicit undefined-checks because empty string is a
         // real instruction — "clear this override" — stored as null so the

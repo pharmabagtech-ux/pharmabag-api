@@ -21,6 +21,7 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { QueryProductDto } from './dto/query-product.dto';
 import { CreateProductRequestDto } from './dto/create-product-request.dto';
 import { BulkCreateProductDto } from './dto/bulk-create-product.dto';
+import { faqForStorage } from '../../common/products/faq';
 
 @Injectable()
 export class ProductsService {
@@ -1173,7 +1174,12 @@ export class ProductsService {
       // WHITELIST projection, so a column added to the model does not reach
       // the storefront until it is named here.
       pageIntro: m.pageIntro,
-      faq: m.faq,
+      // Well-formed rows only. Anything written before ProductFaqEntryDto is a
+      // list of empty arrays, and the page runs applyTokens(f.question) over
+      // this list — undefined.replace() would 500 the product page rather than
+      // merely drop the FAQ. Nothing valid stays null, so the storefront falls
+      // back to its generated questions.
+      faq: faqForStorage(m.faq),
       // Group seller listings, cheapest net price first (see
       // rankListingsByNetPrice — the DB's `orderBy: mrp` ties whenever
       // sellers share a printed MRP and only their discount differs).
