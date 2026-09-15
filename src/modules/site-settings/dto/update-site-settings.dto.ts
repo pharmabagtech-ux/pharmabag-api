@@ -38,6 +38,21 @@ export class UpdateSiteSettingsDto {
   })
   ga4MeasurementId?: string;
 
+  /**
+   * Meta (Facebook) Pixel id — a bare 15- or 16-digit number from Events
+   * Manager. Digits only: an `act_`-prefixed ad-account id and a pasted
+   * Events Manager URL are both common mistakes, and either one would render
+   * a dead pixel that still looks installed. Rejecting them here is the only
+   * place that mistake is cheap to catch.
+   */
+  @ApiPropertyOptional({ example: '1234567890123456' })
+  @IsOptional()
+  @Matches(/^\d{15,16}$/, {
+    message:
+      'metaPixelId must be the 15- or 16-digit pixel id from Events Manager, digits only',
+  })
+  metaPixelId?: string;
+
   /** Official brand profiles — feeds the Organization sameAs entity links. */
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()

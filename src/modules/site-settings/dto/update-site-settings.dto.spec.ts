@@ -9,6 +9,7 @@ describe('UpdateSiteSettingsDto', () => {
       gscVerification: 'abc123XYZ',
       bingVerification: 'DEF456',
       ga4MeasurementId: 'G-ABC123XYZ0',
+      metaPixelId: '1234567890123456',
       socialProfiles: ['https://www.linkedin.com/company/pharmabag'],
       supportEmail: 'support@pharmabag.in',
       addressLocality: 'Kolkata',
@@ -30,6 +31,28 @@ describe('UpdateSiteSettingsDto', () => {
     });
     const errors = await validate(dto);
     expect(errors.some((e) => e.property === 'ga4MeasurementId')).toBe(true);
+  });
+
+  // Meta issues both 15- and 16-digit pixel ids; both must pass.
+  it.each(['123456789012345', '1234567890123456'])(
+    'accepts a %s-character Meta pixel id',
+    async (metaPixelId) => {
+      const dto = plainToInstance(UpdateSiteSettingsDto, { metaPixelId });
+      expect(await validate(dto)).toHaveLength(0);
+    },
+  );
+
+  // The commonest paste mistakes: the whole Events Manager URL, the ad-account
+  // id (which carries an `act_` prefix), and a truncated id.
+  it.each([
+    'act_1234567890123456',
+    'https://business.facebook.com/events_manager2/list/1234567890123456',
+    '12345',
+    'G-ABC123XYZ0',
+  ])('rejects %s as a Meta pixel id', async (metaPixelId) => {
+    const dto = plainToInstance(UpdateSiteSettingsDto, { metaPixelId });
+    const errors = await validate(dto);
+    expect(errors.some((e) => e.property === 'metaPixelId')).toBe(true);
   });
 
   it('rejects a non-URL social profile', async () => {

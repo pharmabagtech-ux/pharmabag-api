@@ -47,6 +47,16 @@ describe('SiteSettingsService', () => {
     expect(result).toEqual({ ga4MeasurementId: 'G-ABC123XYZ0' });
   });
 
+  it('passes metaPixelId through the whitelist so the storefront can render it', async () => {
+    const { service } = makeService({ metaPixelId: '1234567890123456' });
+    expect(await service.get()).toEqual({ metaPixelId: '1234567890123456' });
+  });
+
+  it('clearing metaPixelId removes the pixel entirely', async () => {
+    const { service } = makeService(null);
+    expect(await service.update({ metaPixelId: '' })).toEqual({});
+  });
+
   it('drops empty arrays (clearing socialProfiles really clears them)', async () => {
     const { service } = makeService(null);
     const result = await service.update({ socialProfiles: [] });
