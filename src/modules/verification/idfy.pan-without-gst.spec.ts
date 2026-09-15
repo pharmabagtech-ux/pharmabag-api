@@ -227,7 +227,17 @@ describe('verifyPan — a PAN that really is bad is still rejected', () => {
     expect((await service.verifyPan('CEWPR5040D')).status).toBe(false);
   });
 
-  it('rejects when both endpoints fail outright', async () => {
+  /**
+   * Updated for the Masters India outage of 2026-09-15.
+   *
+   * This used to assert 'Pan Number is invalid', which is exactly the bug that
+   * outage exposed: a vendor 5xx is not evidence that the user's PAN is bad,
+   * and telling a seller their document is invalid when our vendor is down is
+   * a lie we then have to walk back. A genuine rejection is still covered by
+   * the other cases in this block — see idfy.vendor-outage.spec.ts for the
+   * full not-found-vs-unavailable matrix.
+   */
+  it('reports an outage on both endpoints as unavailable, not as a bad PAN', async () => {
     const { service } = makeService({
       searchpan: new Error('HTTP 500'),
       pandetail: new Error('HTTP 500'),
@@ -236,8 +246,11 @@ describe('verifyPan — a PAN that really is bad is still rejected', () => {
     const result = await service.verifyPan('CEWPR5040D');
 
     expect(result.status).toBe(false);
-    expect(result.message).toBe('Pan Number is invalid');
-  });
+    expect(result.message).toBe(
+      'Verification service is temporarily unavailable. Please try again in a few minutes.',
+    );
+    expect(result.message).not.toBe('Pan Number is invalid');
+  }, 15_000);
 
   it('does not treat an empty PAN details payload as a pass', async () => {
     const { service } = makeService({
