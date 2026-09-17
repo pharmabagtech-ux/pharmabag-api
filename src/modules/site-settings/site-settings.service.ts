@@ -10,6 +10,7 @@ const PUBLIC_KEYS = [
   'gscVerification',
   'bingVerification',
   'ga4MeasurementId',
+  'metaPixelId',
   'socialProfiles',
   'supportEmail',
   'addressLocality',
