@@ -692,6 +692,23 @@ export class AdminService {
     if (!product) throw new NotFoundException('Product not found');
     if (product.isActive) throw new BadRequestException('Product is already active');
 
+    // Same rule as approveProduct (see the comment there): an unlinked listing
+    // cannot be made buyable by flipping isActive, so this route must not do it either.
+    if (!product.masterProductId) {
+      throw new BadRequestException(
+        'This listing is not linked to a catalogue product, so enabling it would ' +
+          'not make it visible to buyers. Add the product to the catalogue first, ' +
+          'then ask the seller to list it against that entry.',
+      );
+    }
+
+    if (product.approvalStatus !== ProductApprovalStatus.APPROVED) {
+      throw new BadRequestException(
+        'This listing has not been approved, so it cannot be enabled directly. ' +
+          'Use the approve endpoint instead, which reviews and activates it together.',
+      );
+    }
+
     const updated = await this.prisma.product.update({
       where: { id: productId },
       data: { isActive: true },
