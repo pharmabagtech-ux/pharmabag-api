@@ -50,7 +50,15 @@ const makeService = (existing: { id: string; sellerId: string } | null): Harness
     },
     category: { findUnique: async () => ({ id: 'cat', name: 'Cat' }) },
     subCategory: { findUnique: async () => ({ id: 'sub', name: 'Sub' }) },
-    masterProduct: { findFirst: async () => null },
+    masterProduct: {
+      // The bulk-CSV-shaped test below sends masterProductId: 'master-1',
+      // which is now resolved and validated rather than trusted, so the mock
+      // must actually answer that id lookup instead of returning null
+      // unconditionally. No test in this file relies on the
+      // name+manufacturer fallback, so that query still returns null.
+      findFirst: async (args: any) =>
+        args?.where?.id === 'master-1' ? { id: 'master-1' } : null,
+    },
     company: { upsert: async () => ({ id: 'company' }) },
     chemicalComposition: { upsert: async () => ({ id: 'cc' }) },
     productImage: {

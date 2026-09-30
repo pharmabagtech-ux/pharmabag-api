@@ -71,6 +71,58 @@ export class ProductsService {
   }
 
   /**
+   * Resolve the catalogue product a listing must link to, and prove it is
+   * actually live — never trust a client-supplied id on its own.
+   *
+   * `masterProductId` is a free-form optional string on CreateProductDto and
+   * `POST /products` is seller-facing, so an id arriving here is no different
+   * from any other user input: it can be stale (a master soft-deleted or
+   * deactivated since the seller last searched — the portal's own catalogue
+   * search falls back to mock suggestions when the suggestions API errors,
+   * so a fabricated id can reach here from an otherwise legitimate client)
+   * or simply made up. Connecting to it unchecked would satisfy the "listing
+   * OF a live catalogue product" rule in letter only: a dead master gets
+   * auto-approved and set active same as a live one, and an id matching no
+   * row at all fails as a foreign-key violation in Postgres — a 500 where a
+   * seller should get a clean, actionable 400. Applying the same liveness
+   * check here that the name+manufacturer fallback already applies closes
+   * both holes.
+   */
+  private async resolveCatalogueMaster(normalized: CreateProductDto): Promise<string> {
+    if (normalized.masterProductId) {
+      const master = await this.prisma.masterProduct.findFirst({
+        where: {
+          id: normalized.masterProductId,
+          isActive: true,
+          deletedAt: null,
+        },
+      });
+      if (!master) {
+        throw new BadRequestException(
+          'That catalogue entry is no longer available. Please search again ' +
+            'and pick a current listing.',
+        );
+      }
+      return master.id;
+    }
+
+    const master = await this.prisma.masterProduct.findFirst({
+      where: {
+        name: { equals: normalized.name, mode: 'insensitive' },
+        manufacturer: { equals: normalized.manufacturer, mode: 'insensitive' },
+        deletedAt: null,
+      },
+    });
+    if (master) return master.id;
+
+    throw new BadRequestException(
+      `"${normalized.name}" is not in the PharmaBag catalogue yet. ` +
+        'Search for the product and pick it from the suggestions, or submit a ' +
+        'product request and we will add it to the catalogue.',
+    );
+  }
+
+  /**
    * Create a product with default batch, search index, and analytics.
    * Supports images, discount fields, externalId (idempotent upsert), and migration mode.
    */
@@ -170,24 +222,7 @@ export class ProductsService {
      * cannot find their product are sent to the product-request flow instead,
      * which admin already reviews.
      *
-     * The name+manufacturer lookup stays as a fallback so callers that know the
-     * product but not its id (bulk import, older clients) still resolve.
-     */
-    let masterProductId = normalized.masterProductId;
-    if (!masterProductId) {
-      const master = await this.prisma.masterProduct.findFirst({
-        where: {
-          name: { equals: normalized.name, mode: 'insensitive' },
-          manufacturer: { equals: normalized.manufacturer, mode: 'insensitive' },
-          deletedAt: null,
-        },
-      });
-      if (master) masterProductId = master.id;
-    }
-
-    /**
-     * `isMigration` deliberately does NOT excuse an unlinked listing.
-     *
+     * `isMigration` deliberately does NOT excuse an unlinked listing either.
      * It is an optional boolean on CreateProductDto and POST /products is
      * seller-facing, so a gate that honoured it would hold only against sellers
      * who did not think to send `{"isMigration": true}`. It keeps its other
@@ -196,13 +231,7 @@ export class ProductsService {
      * entry. The one internal caller that sets it, seller-bulk-csv.service,
      * always passes masterProductId as well, so nothing legitimate regresses.
      */
-    if (!masterProductId) {
-      throw new BadRequestException(
-        `"${normalized.name}" is not in the PharmaBag catalogue yet. ` +
-          'Search for the product and pick it from the suggestions, or submit a ' +
-          'product request and we will add it to the catalogue.',
-      );
-    }
+    const masterProductId = await this.resolveCatalogueMaster(normalized);
 
     // Prevent duplicate products for the same seller
     const duplicateCheckWhere: Prisma.ProductWhereInput = {

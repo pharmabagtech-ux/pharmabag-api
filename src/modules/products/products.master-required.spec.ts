@@ -43,8 +43,18 @@ interface Harness {
 /**
  * @param master the row the name + manufacturer catalogue lookup returns, or
  * null for "this product is not in the catalogue".
+ * @param byId the raw row an explicit `masterProductId` resolves to before
+ * liveness is applied, or null for "this id matches nothing at all". Defaults
+ * to `master` so single-argument callers exercising the id path still get a
+ * sensible row. `isActive`/`deletedAt` on this row are honoured the way the
+ * real `isActive: true, deletedAt: null` query filters would honour them —
+ * set either to fail liveness and the mock returns null, same as Postgres
+ * would.
  */
-const makeService = (master: { id: string } | null): Harness => {
+const makeService = (
+  master: { id: string } | null,
+  byId: { id: string; isActive?: boolean; deletedAt?: Date | null } | null = master,
+): Harness => {
   const created: any[] = [];
 
   const prisma: any = {
@@ -52,7 +62,18 @@ const makeService = (master: { id: string } | null): Harness => {
     category: { findUnique: async () => ({ id: 'cat', name: 'Cat' }) },
     subCategory: { findUnique: async () => ({ id: 'sub', name: 'Sub' }) },
     masterProduct: {
-      findFirst: async () => master,
+      // The service queries either by id (explicit masterProductId) or by
+      // name+manufacturer (the fallback) — never both — so the presence of
+      // `where.id` tells us which lookup this call is.
+      findFirst: async (args: any) => {
+        if (args?.where?.id !== undefined) {
+          if (!byId || byId.id !== args.where.id) return null;
+          if (byId.isActive === false) return null;
+          if (byId.deletedAt) return null;
+          return byId;
+        }
+        return master;
+      },
       update: async () => ({}),
     },
     company: { upsert: async () => ({ id: 'company' }) },
@@ -141,13 +162,69 @@ describe('ProductsService.create — listings must come from the catalogue', () 
   });
 
   it('accepts an explicit masterProductId from the search picker', async () => {
-    // The catalogue lookup returns null, proving the id alone carried it.
-    const { service, created } = makeService(null);
+    // The name+manufacturer lookup returns null, so this only passes if the
+    // id lookup below actually ran and found a live master — the id is
+    // resolved, not trusted.
+    const { service, created } = makeService(null, { id: MASTER });
 
     await service.create('user-1', dto({ masterProductId: MASTER }));
 
     expect(created).toHaveLength(1);
     expect(created[0].data.masterProduct.connect.id).toBe(MASTER);
+  });
+
+  it('rejects an explicit masterProductId that matches nothing in the catalogue', async () => {
+    const { service, created } = makeService(null, null);
+
+    await expect(
+      service.create('user-1', dto({ masterProductId: 'made-up-id' })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(created).toHaveLength(0);
+  });
+
+  it('rejects an explicit masterProductId whose master is soft-deleted', async () => {
+    const { service, created } = makeService(null, {
+      id: MASTER,
+      deletedAt: new Date(),
+    });
+
+    await expect(
+      service.create('user-1', dto({ masterProductId: MASTER })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(created).toHaveLength(0);
+  });
+
+  it('rejects an explicit masterProductId whose master is inactive', async () => {
+    const { service, created } = makeService(null, {
+      id: MASTER,
+      isActive: false,
+    });
+
+    await expect(
+      service.create('user-1', dto({ masterProductId: MASTER })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(created).toHaveLength(0);
+  });
+
+  it('gives a distinct message for a stale explicit id, pointing at searching again rather than a product request', async () => {
+    const { service } = makeService(null, {
+      id: MASTER,
+      isActive: false,
+    });
+
+    await expect(
+      service.create('user-1', dto({ masterProductId: MASTER })),
+    ).rejects.toThrow(/catalogue entry.*(no longer|not).*available/is);
+
+    // Distinct from the no-match-at-all message: it must not name the
+    // product or point at the product-request flow, since the remedy here is
+    // "search again", not "request we add it".
+    await expect(
+      service.create('user-1', dto({ masterProductId: MASTER })),
+    ).rejects.not.toThrow(/product request/i);
   });
 
   it('falls back to an exact name + manufacturer match when no id is sent', async () => {
