@@ -1,4 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
+import { ProductApprovalStatus } from '@prisma/client';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 
@@ -37,11 +38,32 @@ interface Harness {
 
 /**
  * @param existing the row that a lookup by externalId/slug will return, or
- * null for "no match" (the plain create path).
+ * null for "no match" (the plain create path). `masterProductId` and
+ * `approvalStatus` default to an already-linked, already-approved listing —
+ * realistic for "the caller's OWN listing" cases, since in production such a
+ * row could only have been created through create()'s own catalogue gate (or
+ * a prior upsert through this same, now-gated, path). The ownership tests
+ * below are about who may write the row, not about catalogue linkage, which
+ * products.upsert-keeps-catalogue-rule.spec.ts covers directly.
  */
-const makeService = (existing: { id: string; sellerId: string } | null): Harness => {
+const makeService = (
+  existing:
+    | {
+        id: string;
+        sellerId: string;
+        masterProductId?: string | null;
+        approvalStatus?: ProductApprovalStatus;
+      }
+    | null,
+): Harness => {
   const updated: any[] = [];
   const created: any[] = [];
+
+  const existingRow = existing && {
+    masterProductId: 'master-1',
+    approvalStatus: ProductApprovalStatus.APPROVED,
+    ...existing,
+  };
 
   const prisma: any = {
     sellerProfile: {
@@ -50,7 +72,15 @@ const makeService = (existing: { id: string; sellerId: string } | null): Harness
     },
     category: { findUnique: async () => ({ id: 'cat', name: 'Cat' }) },
     subCategory: { findUnique: async () => ({ id: 'sub', name: 'Sub' }) },
-    masterProduct: { findFirst: async () => null },
+    masterProduct: {
+      // The bulk-CSV-shaped test below sends masterProductId: 'master-1',
+      // which is now resolved and validated rather than trusted, so the mock
+      // must actually answer that id lookup instead of returning null
+      // unconditionally. No test in this file relies on the
+      // name+manufacturer fallback, so that query still returns null.
+      findFirst: async (args: any) =>
+        args?.where?.id === 'master-1' ? { id: 'master-1' } : null,
+    },
     company: { upsert: async () => ({ id: 'company' }) },
     chemicalComposition: { upsert: async () => ({ id: 'cc' }) },
     productImage: {
@@ -66,17 +96,26 @@ const makeService = (existing: { id: string; sellerId: string } | null): Harness
     },
     product: {
       // externalId lookup
-      findUnique: async () => existing,
+      findUnique: async () => existingRow,
       // First call is the slug lookup; the second is the same-seller duplicate
       // check further down create(), which must stay empty or we never reach
       // the create branch this test is asserting on.
       findFirst: (() => {
         let call = 0;
-        return async () => (call++ === 0 ? existing : null);
+        return async () => (call++ === 0 ? existingRow : null);
       })(),
       update: async (args: any) => {
         updated.push(args);
-        return { id: args.where.id, name: 'x', slug: 's' };
+        // `category`/`subCategory` mirror the real query's `include`. The search
+        // index is labelled from the returned ROW rather than from the DTO, so a
+        // mock that omits them no longer matches production.
+        return {
+          id: args.where.id,
+          name: 'x',
+          slug: 's',
+          category: { name: 'Cat' },
+          subCategory: { name: 'Sub' },
+        };
       },
       create: async (args: any) => {
         created.push(args);
@@ -145,8 +184,9 @@ describe('ProductsService.create — listing ownership', () => {
     });
 
     // Exactly what seller-bulk-csv.service.ts sends: no slug, no externalId,
-    // isMigration true. The slug is derived from the name and collides.
-    await service.create('user-b', dto({ isMigration: true }));
+    // isMigration true, and the id of the catalogue row it matched the CSV line
+    // against. The slug is derived from the name and collides.
+    await service.create('user-b', dto({ isMigration: true, masterProductId: 'master-1' }));
 
     expect(updated).toHaveLength(0);
     expect(created).toHaveLength(1);

@@ -8,6 +8,7 @@ import {
 import { Prisma, ProductApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { ACTIVE_LISTING } from '../../common/products/active-listing';
+import { isApprovedForActivation } from '../../common/products/approval-rule';
 import { calculateNetUnitPrice } from '../../common/pricing/ptr.util';
 import {
   buildSearchCondition,
@@ -71,6 +72,59 @@ export class ProductsService {
   }
 
   /**
+   * Resolve the catalogue product a listing must link to, and prove it is
+   * actually live — never trust a client-supplied id on its own.
+   *
+   * `masterProductId` is a free-form optional string on CreateProductDto and
+   * `POST /products` is seller-facing, so an id arriving here is no different
+   * from any other user input: it can be stale (a master soft-deleted or
+   * deactivated since the seller last searched — the portal's own catalogue
+   * search falls back to mock suggestions when the suggestions API errors,
+   * so a fabricated id can reach here from an otherwise legitimate client)
+   * or simply made up. Connecting to it unchecked would satisfy the "listing
+   * OF a live catalogue product" rule in letter only: a dead master gets
+   * auto-approved and set active same as a live one, and an id matching no
+   * row at all fails as a foreign-key violation in Postgres — a 500 where a
+   * seller should get a clean, actionable 400. This method applies the same
+   * `isActive: true` liveness check to BOTH branches below — the explicit-id
+   * lookup and the name+manufacturer fallback — closing both holes.
+   */
+  private async resolveCatalogueMaster(normalized: CreateProductDto): Promise<string> {
+    if (normalized.masterProductId) {
+      const master = await this.prisma.masterProduct.findFirst({
+        where: {
+          id: normalized.masterProductId,
+          isActive: true,
+          deletedAt: null,
+        },
+      });
+      if (!master) {
+        throw new BadRequestException(
+          'That catalogue entry is no longer available. Please search again ' +
+            'and pick a current listing.',
+        );
+      }
+      return master.id;
+    }
+
+    const master = await this.prisma.masterProduct.findFirst({
+      where: {
+        name: { equals: normalized.name, mode: 'insensitive' },
+        manufacturer: { equals: normalized.manufacturer, mode: 'insensitive' },
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    if (master) return master.id;
+
+    throw new BadRequestException(
+      `"${normalized.name}" is not in the PharmaBag catalogue yet. ` +
+        'Search for the product and pick it from the suggestions, or submit a ' +
+        'product request and we will add it to the catalogue.',
+    );
+  }
+
+  /**
    * Create a product with default batch, search index, and analytics.
    * Supports images, discount fields, externalId (idempotent upsert), and migration mode.
    */
@@ -115,7 +169,7 @@ export class ProductsService {
           );
         }
         this.logger.log(`Upsert: product with externalId ${normalized.externalId} exists, updating`);
-        return this.upsertExistingProduct(existing.id, normalized, category, subCategory);
+        return this.upsertExistingProduct(existing, normalized, category, subCategory);
       }
     }
 
@@ -145,7 +199,7 @@ export class ProductsService {
           if (existingBySlug.sellerId === seller.id) {
             this.logger.log(`Upsert: product with slug ${normalized.slug} exists, updating`);
             return this.upsertExistingProduct(
-              existingBySlug.id,
+              existingBySlug,
               normalized,
               category,
               subCategory,
@@ -160,31 +214,38 @@ export class ProductsService {
       }
     }
 
-    let masterProductId = normalized.masterProductId;
-    if (!masterProductId) {
-      const master = await this.prisma.masterProduct.findFirst({
-        where: {
-          name: { equals: normalized.name, mode: 'insensitive' },
-          manufacturer: { equals: normalized.manufacturer, mode: 'insensitive' },
-          deletedAt: null,
-        },
-      });
-      if (master) masterProductId = master.id;
-    }
-
-    const isFromMaster = !!masterProductId;
+    /**
+     * Every seller listing must be a listing OF a catalogue product.
+     *
+     * The seller supplies the commercial terms — price, stock, MOQ, expiry,
+     * discount — and the catalogue supplies the identity. Listings that matched
+     * nothing used to be created anyway as PENDING/inactive rows: invisible to
+     * buyers, never chased by anyone, and slowly accumulating. Sellers who
+     * cannot find their product are sent to the product-request flow instead,
+     * which admin already reviews.
+     *
+     * `isMigration` deliberately does NOT excuse an unlinked listing either.
+     * It is an optional boolean on CreateProductDto and POST /products is
+     * seller-facing, so a gate that honoured it would hold only against sellers
+     * who did not think to send `{"isMigration": true}`. It keeps its other
+     * documented effect — relaxed image-URL validation. The externalId/slug
+     * upsert path above used to return before this point unconditionally,
+     * which was the actual hole: a legacy orphan row could be linked,
+     * activated or renamed via that path with none of the checks below ever
+     * running. `upsertExistingProduct` now resolves and links a still-unlinked
+     * match through this same `resolveCatalogueMaster`, and gates isActive on
+     * approval the same way `assertMayActivate` does — see that function.
+     */
+    const masterProductId = await this.resolveCatalogueMaster(normalized);
 
     // Prevent duplicate products for the same seller
     const duplicateCheckWhere: Prisma.ProductWhereInput = {
       sellerId: seller.id,
       deletedAt: null,
     };
-    if (masterProductId) {
-      duplicateCheckWhere.masterProductId = masterProductId;
-    } else {
-      duplicateCheckWhere.name = { equals: normalized.name, mode: 'insensitive' };
-      duplicateCheckWhere.manufacturer = { equals: normalized.manufacturer, mode: 'insensitive' };
-    }
+    // One listing per seller per catalogue product. The old name+manufacturer
+    // fallback here was for unlinked rows, which can no longer be created.
+    duplicateCheckWhere.masterProductId = masterProductId;
 
     const duplicateProduct = await this.prisma.product.findFirst({
       where: duplicateCheckWhere,
@@ -218,7 +279,7 @@ export class ProductsService {
       seller: { connect: { id: seller.id } },
       category: { connect: { id: normalized.categoryId } },
       subCategory: { connect: { id: normalized.subCategoryId } },
-      masterProduct: isFromMaster ? { connect: { id: masterProductId } } : undefined,
+      masterProduct: { connect: { id: masterProductId } },
       sku: normalized.sku,
       company: companyId ? { connect: { id: companyId } } : undefined,
       chemicalCompositionRef: chemicalCompositionId ? { connect: { id: chemicalCompositionId } } : undefined,
@@ -234,8 +295,11 @@ export class ProductsService {
       maximumOrderQuantity: normalized.maximumOrderQuantity,
       discountType: normalized.discountType,
       discountMeta: normalized.discountMeta ?? undefined,
-      approvalStatus: isFromMaster ? ProductApprovalStatus.APPROVED : ProductApprovalStatus.PENDING,
-      isActive: isFromMaster ? true : false, // Auto-approve if from master catalog
+      // The product was vetted when it entered the catalogue, and the guard
+      // above means every row reaching here is linked to it — so there is
+      // nothing left for an admin to approve about the listing itself.
+      approvalStatus: ProductApprovalStatus.APPROVED,
+      isActive: true,
     };
 
     const product = await this.prisma.product.create({
@@ -302,44 +366,55 @@ export class ProductsService {
   }
 
   /**
-   * Upsert an existing product during migration/idempotent creation.
-   */
-  /**
-   * Update an EXISTING listing in place.
+   * Update an EXISTING listing in place, as part of create()'s
+   * externalId/slug upsert paths.
    *
    * Takes no seller: the caller must already have proven the row belongs to
    * the seller making the request. Dropping the parameter is the point — while
    * it existed, this function would happily stamp a new owner onto someone
    * else's listing, and both call sites did exactly that.
+   *
+   * Takes the EXISTING ROW, not just its id, for the same reason: the three
+   * catalogue invariants below all need data off that row (its current
+   * `masterProductId` and `approvalStatus`), and both call sites already have
+   * it in hand from the lookup that found the match — no extra query.
+   *
+   * name, manufacturer, chemicalComposition, categoryId and subCategoryId are
+   * deliberately NOT written here, nor is slug (which is name, re-derived).
+   * This function used to pass all five straight from the DTO to
+   * prisma.product.update with no check at all — the catalogue gate in
+   * create() ran below this path, never on it — so a seller could POST an
+   * externalId matching their own live listing plus a new name and rename it
+   * to anything, in one request. The row already holds the identity the
+   * catalogue gave it; there is nothing for this function to refresh. (The
+   * seller bulk-CSV importer does send today's master name/manufacturer/
+   * category on every row, but only so a genuinely NEW listing is created
+   * with current data — for a row that already exists, its stored identity
+   * is authoritative and this function leaves it alone.)
    */
   private async upsertExistingProduct(
-    productId: string,
+    existing: {
+      id: string;
+      masterProductId: string | null;
+      approvalStatus: ProductApprovalStatus;
+    },
     dto: CreateProductDto,
     category: { name: string },
     subCategory: { name: string },
   ) {
-    let companyId: string | null = null;
-    if (dto.manufacturer) {
-      const company = await this.prisma.company.upsert({
-        where: { name: dto.manufacturer.trim() },
-        update: {},
-        create: { name: dto.manufacturer.trim() },
-      });
-      companyId = company.id;
-    }
-
-    let chemicalCompositionId: string | null = null;
-    if (dto.chemicalComposition) {
-      const cc = await this.prisma.chemicalComposition.upsert({
-        where: { name: dto.chemicalComposition.trim() },
-        update: {},
-        create: { name: dto.chemicalComposition.trim() },
-      });
-      chemicalCompositionId = cc.id;
-    }
+    // Every listing ends up linked to a live catalogue product, upsert or
+    // not. A row that is ALREADY linked keeps that link rather than being
+    // re-resolved from the DTO's name/manufacturer: re-deriving it here on
+    // every upsert would reject an otherwise-routine re-list the moment the
+    // row's stored name has drifted even slightly from what the DTO happens
+    // to send (a master renamed since, a legacy row's own historical
+    // spelling). Only a still-unlinked row — the legacy-orphan case this
+    // fix exists for — needs resolving now.
+    const masterProductId =
+      existing.masterProductId ?? (await this.resolveCatalogueMaster(dto));
 
     const updated = await this.prisma.product.update({
-      where: { id: productId },
+      where: { id: existing.id },
       data: {
         /**
          * `sellerId` is deliberately NOT written here.
@@ -350,15 +425,8 @@ export class ProductsService {
          * place. Omitting it means no future caller can reassign a listing by
          * routing through this function, whatever it gets wrong upstream.
          */
-        categoryId: dto.categoryId,
-        subCategoryId: dto.subCategoryId,
+        masterProduct: { connect: { id: masterProductId } },
         sku: dto.sku,
-        companyId,
-        chemicalCompositionId,
-        name: dto.name,
-        slug: dto.slug,
-        manufacturer: dto.manufacturer,
-        chemicalComposition: dto.chemicalComposition,
         description: dto.description,
         mrp: dto.mrp,
         gstPercent: dto.gstPercent,
@@ -366,7 +434,15 @@ export class ProductsService {
         maximumOrderQuantity: dto.maximumOrderQuantity,
         discountType: dto.discountType,
         discountMeta: dto.discountMeta ?? undefined,
-        isActive: true,
+        // A seller-initiated upsert must not publish a listing nobody
+        // approved (invariant (c) — see isApprovedForActivation). This used
+        // to be an unconditional `true`, which is exactly how a PENDING,
+        // never-reviewed orphan listing could go live through this path.
+        isActive: isApprovedForActivation(existing.approvalStatus),
+        // Left unconditional deliberately: re-upserting a soft-deleted
+        // listing (same externalId/slug, same seller) reviving it is the
+        // "idempotent creation" this function's callers rely on, not a bug
+        // this fix is scoped to.
         deletedAt: null,
       },
       include: {
@@ -377,29 +453,34 @@ export class ProductsService {
 
     // Replace images
     if (dto.images && dto.images.length > 0) {
-      await this.prisma.productImage.deleteMany({ where: { productId } });
+      await this.prisma.productImage.deleteMany({ where: { productId: existing.id } });
       await this.prisma.productImage.createMany({
-        data: dto.images.map((url) => ({ productId, url: url.trim() })),
+        data: dto.images.map((url) => ({ productId: existing.id, url: url.trim() })),
       });
     }
 
-    await this.inventoryService.updateDefaultBatch(productId, dto.stock, dto.expiryDate);
+    await this.inventoryService.updateDefaultBatch(existing.id, dto.stock, dto.expiryDate);
 
-    this.searchIndexService.upsert(productId, {
+    this.searchIndexService.upsert(existing.id, {
       name: updated.name,
       manufacturer: updated.manufacturer,
       chemicalComposition: updated.chemicalComposition,
-      categoryName: category.name,
-      subCategoryName: subCategory.name,
+      // From the row, like the three fields above it — not from the DTO. This
+      // update no longer writes categoryId, so a DTO naming a different
+      // category would index the listing under a category it is not in, and a
+      // seller could choose where their listing surfaces in search just by
+      // sending another valid id.
+      categoryName: updated.category.name,
+      subCategoryName: updated.subCategory.name,
     });
 
     const batch = await this.prisma.productBatch.findFirst({
-      where: { productId, batchNumber: 'DEFAULT' },
+      where: { productId: existing.id, batchNumber: 'DEFAULT' },
     });
 
-    const images = await this.prisma.productImage.findMany({ where: { productId } });
+    const images = await this.prisma.productImage.findMany({ where: { productId: existing.id } });
 
-    this.logger.log(`Product upserted: ${productId}`);
+    this.logger.log(`Product upserted: ${existing.id}`);
 
     // Touch the master product to reflect new listing activity
     if (updated.masterProductId) {
@@ -543,6 +624,9 @@ export class ProductsService {
    */
   async update(userId: string, productId: string, dto: UpdateProductDto) {
     const product = await this.findOwnProduct(userId, productId);
+
+    this.assertListingIdentityUnchanged(product, dto);
+    this.assertMayActivate(product, dto);
 
     const { stock, expiryDate, images, ...productData } = dto;
 
@@ -1412,6 +1496,74 @@ export class ProductsService {
   // ──────────────────────────────────────────────
   // HELPERS
   // ──────────────────────────────────────────────
+
+  /**
+   * The identity of a listing belongs to the catalogue, not to the seller
+   * (see products.identity-immutable.spec.ts for the full history).
+   *
+   * Compares against THE ROW'S OWN current values, not the linked master's:
+   * the seller edit form resends all five fields unchanged on every save, so
+   * only a value comparison — not a presence check — can tell a resubmit
+   * from a rename, and comparing against the master would also catch
+   * historical rows whose category has already drifted from it.
+   */
+  private assertListingIdentityUnchanged(
+    product: {
+      name: string;
+      manufacturer: string | null;
+      chemicalComposition: string | null;
+      categoryId: string;
+      subCategoryId: string;
+    },
+    dto: UpdateProductDto,
+  ) {
+    const changed = (incoming: string | undefined, current: string | null) =>
+      incoming !== undefined &&
+      incoming.trim().toLowerCase() !== (current ?? '').trim().toLowerCase();
+
+    const identityChanged =
+      changed(dto.name, product.name) ||
+      changed(dto.manufacturer, product.manufacturer) ||
+      changed(dto.chemicalComposition, product.chemicalComposition) ||
+      changed(dto.categoryId, product.categoryId) ||
+      changed(dto.subCategoryId, product.subCategoryId);
+
+    if (identityChanged) {
+      throw new BadRequestException(
+        "A listing's product details come from the PharmaBag catalogue and cannot be changed. " +
+          'Edit your price, stock, expiry or discount instead — or submit a product ' +
+          'request if the catalogue entry itself is wrong.',
+      );
+    }
+  }
+
+  /**
+   * A seller must not publish a listing nobody approved.
+   *
+   * isActive is on UpdateProductDto and flowed through update()'s
+   * ...productData spread untouched, so a seller sitting on a PENDING, inactive
+   * listing could PATCH {"isActive": true} and go live with no admin review —
+   * the approval gate was not a gate. Pre-existing, and independent of the
+   * catalogue rule.
+   *
+   * Deactivating stays allowed: pausing your own listing is legitimate, and
+   * there is no reason to make a seller ask.
+   *
+   * Throws BadRequestException, not ForbiddenException: this is a rule about
+   * what state the ROW is in (not yet approved), the same kind of rule as
+   * assertListingIdentityUnchanged above, and the codebase's convention
+   * reserves Forbidden for who-you-are/ownership failures.
+   */
+  private assertMayActivate(
+    product: { approvalStatus: ProductApprovalStatus },
+    dto: UpdateProductDto,
+  ) {
+    if (dto.isActive === true && !isApprovedForActivation(product.approvalStatus)) {
+      throw new BadRequestException(
+        'This listing has not been approved yet, so it cannot be made active.',
+      );
+    }
+  }
 
   /**
    * Find a product owned by the current seller, or throw.

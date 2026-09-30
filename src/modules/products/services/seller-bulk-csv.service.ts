@@ -81,8 +81,23 @@ export class SellerBulkCsvService {
         continue;
       }
 
+      // Matched on name as well as masterProductId: a legacy listing that
+      // predates this seller's product being added to the catalogue is still
+      // this seller's row for the same product, but has masterProductId:
+      // null, so the link alone would miss it. Missing it here does not let
+      // it through unlinked or unapproved (ProductsService.create's upsert
+      // path now enforces that regardless), but it would report a
+      // misleading "success" for a row that stays PENDING/inactive, instead
+      // of the "already listed" the seller actually needs to see.
       const existing = await this.prisma.product.findFirst({
-        where: { sellerId: seller.id, masterProductId: master.id, deletedAt: null },
+        where: {
+          sellerId: seller.id,
+          deletedAt: null,
+          OR: [
+            { masterProductId: master.id },
+            { name: { equals: master.name, mode: 'insensitive' } },
+          ],
+        },
       });
 
       if (existing) {

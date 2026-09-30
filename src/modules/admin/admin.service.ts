@@ -20,6 +20,7 @@ import {
 } from '@prisma/client';
 import { StorageService, sanitizeImageBaseName } from '../storage/storage.service';
 import { PrismaService } from '../../database/prisma.service';
+import { isApprovedForActivation } from '../../common/products/approval-rule';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { QuerySellersDto } from './dto/query-sellers.dto';
 import { AdminQueryProductsDto } from './dto/query-products.dto';
@@ -664,6 +665,11 @@ export class AdminService {
     if (payload.maximumOrderQuantity !== undefined && payload.maximumOrderQuantity !== "") updateData.maximumOrderQuantity = Number(payload.maximumOrderQuantity);
     if (payload.description !== undefined) updateData.description = payload.description;
     if (payload.gstPercent !== undefined && payload.gstPercent !== "") updateData.gstPercent = Number(payload.gstPercent);
+    // categoryId is catalogue-owned (see the seller-side identity freeze in
+    // ProductsService) — an admin can still re-categorise a listing away
+    // from its MasterProduct here, with no check. Pre-existing, and admins
+    // are trusted, but the right fix is to correct the category on the
+    // MasterProduct itself, not on one seller's listing of it.
     if (payload.categoryId && payload.categoryId !== "") updateData.category = { connect: { id: payload.categoryId } };
 
     return this.prisma.product.update({
@@ -691,6 +697,23 @@ export class AdminService {
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException('Product not found');
     if (product.isActive) throw new BadRequestException('Product is already active');
+
+    // Same rule as approveProduct (see the comment there): an unlinked listing
+    // cannot be made buyable by flipping isActive, so this route must not do it either.
+    if (!product.masterProductId) {
+      throw new BadRequestException(
+        'This listing is not linked to a catalogue product, so enabling it would ' +
+          'not make it visible to buyers. Add the product to the catalogue first, ' +
+          'then ask the seller to list it against that entry.',
+      );
+    }
+
+    if (!isApprovedForActivation(product.approvalStatus)) {
+      throw new BadRequestException(
+        'This listing has not been approved, so it cannot be enabled directly. ' +
+          'Use the approve endpoint instead, which reviews and activates it together.',
+      );
+    }
 
     const updated = await this.prisma.product.update({
       where: { id: productId },
@@ -722,6 +745,22 @@ export class AdminService {
     if (!product) throw new NotFoundException('Product not found');
     if (product.approvalStatus === ProductApprovalStatus.APPROVED) {
       throw new BadRequestException('Product is already approved');
+    }
+
+    /**
+     * Listings predating the catalogue rule have no master product, and the
+     * storefront grid queries MasterProduct — so approving one sets isActive
+     * without making it buyable, which is how the PENDING backlog grew. The
+     * rows are left in place deliberately; this just stops one being promoted
+     * into a visibility it cannot actually have. Rejection still works, so the
+     * backlog stays cleanable.
+     */
+    if (!product.masterProductId) {
+      throw new BadRequestException(
+        'This listing is not linked to a catalogue product, so approving it would ' +
+          'not make it visible to buyers. Add the product to the catalogue first, ' +
+          'then ask the seller to list it against that entry.',
+      );
     }
 
     const updated = await this.prisma.product.update({
