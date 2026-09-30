@@ -204,19 +204,14 @@ export class ProductsService {
       );
     }
 
-    const isFromMaster = !!masterProductId;
-
     // Prevent duplicate products for the same seller
     const duplicateCheckWhere: Prisma.ProductWhereInput = {
       sellerId: seller.id,
       deletedAt: null,
     };
-    if (masterProductId) {
-      duplicateCheckWhere.masterProductId = masterProductId;
-    } else {
-      duplicateCheckWhere.name = { equals: normalized.name, mode: 'insensitive' };
-      duplicateCheckWhere.manufacturer = { equals: normalized.manufacturer, mode: 'insensitive' };
-    }
+    // One listing per seller per catalogue product. The old name+manufacturer
+    // fallback here was for unlinked rows, which can no longer be created.
+    duplicateCheckWhere.masterProductId = masterProductId;
 
     const duplicateProduct = await this.prisma.product.findFirst({
       where: duplicateCheckWhere,
@@ -250,7 +245,7 @@ export class ProductsService {
       seller: { connect: { id: seller.id } },
       category: { connect: { id: normalized.categoryId } },
       subCategory: { connect: { id: normalized.subCategoryId } },
-      masterProduct: isFromMaster ? { connect: { id: masterProductId } } : undefined,
+      masterProduct: { connect: { id: masterProductId } },
       sku: normalized.sku,
       company: companyId ? { connect: { id: companyId } } : undefined,
       chemicalCompositionRef: chemicalCompositionId ? { connect: { id: chemicalCompositionId } } : undefined,
@@ -266,11 +261,11 @@ export class ProductsService {
       maximumOrderQuantity: normalized.maximumOrderQuantity,
       discountType: normalized.discountType,
       discountMeta: normalized.discountMeta ?? undefined,
-      // Linked to the catalogue means approved — the product itself was already
-      // vetted when it entered the catalogue. Since the guard above, only
-      // migration rows can still land here unlinked, and those stay PENDING.
-      approvalStatus: isFromMaster ? ProductApprovalStatus.APPROVED : ProductApprovalStatus.PENDING,
-      isActive: isFromMaster ? true : false,
+      // The product was vetted when it entered the catalogue, and the guard
+      // above means every row reaching here is linked to it — so there is
+      // nothing left for an admin to approve about the listing itself.
+      approvalStatus: ProductApprovalStatus.APPROVED,
+      isActive: true,
     };
 
     const product = await this.prisma.product.create({

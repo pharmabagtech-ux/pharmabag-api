@@ -166,6 +166,18 @@ describe('ProductsService.create — listings must come from the catalogue', () 
     expect(created[0].data.isActive).toBe(true);
   });
 
+  it('always links the listing to its master', async () => {
+    const { service, created } = makeService({ id: MASTER });
+
+    await service.create('user-1', dto());
+
+    // No row reaches the database unlinked any more, so nothing downstream has
+    // to cope with masterProductId === null on a freshly created listing.
+    expect(created[0].data.masterProduct.connect.id).toBe(MASTER);
+    expect(created[0].data.approvalStatus).toBe(ProductApprovalStatus.APPROVED);
+    expect(created[0].data.isActive).toBe(true);
+  });
+
   it('does not let isMigration buy a bypass', async () => {
     // `isMigration` is an optional boolean on CreateProductDto and
     // POST /products is seller-facing, so honouring it here would enforce the
