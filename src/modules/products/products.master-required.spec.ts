@@ -52,7 +52,7 @@ interface Harness {
  * would.
  */
 const makeService = (
-  master: { id: string } | null,
+  master: { id: string; isActive?: boolean; deletedAt?: Date | null } | null,
   byId: { id: string; isActive?: boolean; deletedAt?: Date | null } | null = master,
 ): Harness => {
   const created: any[] = [];
@@ -72,6 +72,15 @@ const makeService = (
           if (byId.deletedAt) return null;
           return byId;
         }
+        // The name+manufacturer fallback. Honours isActive/deletedAt the
+        // same way the id branch above does, so a test can pin the fallback
+        // rejecting a deactivated master instead of linking to it — that is
+        // the actual `where` clause in resolveCatalogueMaster, and a mock
+        // that returned `master` unconditionally here would let that check
+        // vanish from the real code without any test noticing.
+        if (!master) return null;
+        if (master.isActive === false) return null;
+        if (master.deletedAt) return null;
         return master;
       },
       update: async () => ({}),
@@ -236,6 +245,30 @@ describe('ProductsService.create — listings must come from the catalogue', () 
     expect(created[0].data.masterProduct.connect.id).toBe(MASTER);
   });
 
+  it('rejects the name + manufacturer fallback when that master is deactivated', async () => {
+    // The explicit-id branch has always filtered on isActive: true; the
+    // fallback branch did not, so a bulk caller relying on name+manufacturer
+    // (no id) could link a brand-new listing straight to a deactivated
+    // master — the exact outcome the id branch was hardened against.
+    const { service, created } = makeService({ id: MASTER, isActive: false });
+
+    await expect(service.create('user-1', dto())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    expect(created).toHaveLength(0);
+  });
+
+  it('rejects the name + manufacturer fallback when that master is soft-deleted', async () => {
+    const { service, created } = makeService({ id: MASTER, deletedAt: new Date() });
+
+    await expect(service.create('user-1', dto())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    expect(created).toHaveLength(0);
+  });
+
   it('publishes a catalogue-linked listing immediately', async () => {
     const { service, created } = makeService({ id: MASTER });
 
@@ -250,8 +283,11 @@ describe('ProductsService.create — listings must come from the catalogue', () 
 
     await service.create('user-1', dto());
 
-    // No row reaches the database unlinked any more, so nothing downstream has
-    // to cope with masterProductId === null on a freshly created listing.
+    // True of prisma.product.create: no row it writes reaches the database
+    // unlinked any more. NOT true of create() as a whole while the
+    // externalId/slug upsert paths could still return before this gate ran
+    // — see products.upsert-keeps-catalogue-rule.spec.ts, which pins that
+    // those paths are linked too.
     expect(created[0].data.masterProduct.connect.id).toBe(MASTER);
     expect(created[0].data.approvalStatus).toBe(ProductApprovalStatus.APPROVED);
     expect(created[0].data.isActive).toBe(true);

@@ -1,4 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
+import { ProductApprovalStatus } from '@prisma/client';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 
@@ -37,11 +38,32 @@ interface Harness {
 
 /**
  * @param existing the row that a lookup by externalId/slug will return, or
- * null for "no match" (the plain create path).
+ * null for "no match" (the plain create path). `masterProductId` and
+ * `approvalStatus` default to an already-linked, already-approved listing —
+ * realistic for "the caller's OWN listing" cases, since in production such a
+ * row could only have been created through create()'s own catalogue gate (or
+ * a prior upsert through this same, now-gated, path). The ownership tests
+ * below are about who may write the row, not about catalogue linkage, which
+ * products.upsert-keeps-catalogue-rule.spec.ts covers directly.
  */
-const makeService = (existing: { id: string; sellerId: string } | null): Harness => {
+const makeService = (
+  existing:
+    | {
+        id: string;
+        sellerId: string;
+        masterProductId?: string | null;
+        approvalStatus?: ProductApprovalStatus;
+      }
+    | null,
+): Harness => {
   const updated: any[] = [];
   const created: any[] = [];
+
+  const existingRow = existing && {
+    masterProductId: 'master-1',
+    approvalStatus: ProductApprovalStatus.APPROVED,
+    ...existing,
+  };
 
   const prisma: any = {
     sellerProfile: {
@@ -74,13 +96,13 @@ const makeService = (existing: { id: string; sellerId: string } | null): Harness
     },
     product: {
       // externalId lookup
-      findUnique: async () => existing,
+      findUnique: async () => existingRow,
       // First call is the slug lookup; the second is the same-seller duplicate
       // check further down create(), which must stay empty or we never reach
       // the create branch this test is asserting on.
       findFirst: (() => {
         let call = 0;
-        return async () => (call++ === 0 ? existing : null);
+        return async () => (call++ === 0 ? existingRow : null);
       })(),
       update: async (args: any) => {
         updated.push(args);
