@@ -143,7 +143,11 @@ export class CreateProductDto {
 
   @ApiPropertyOptional({
     example: 'uuid-of-master-product',
-    description: 'ID of the master product from catalog (if used, bypasses approval)',
+    description:
+      'ID of the master product this listing is for. Required in practice: when omitted ' +
+      'the service falls back to an exact name + manufacturer match against the catalogue, ' +
+      'and rejects the request if that finds nothing. Optional here only so that ' +
+      'fallback stays usable — a listing always ends up linked to a catalogue product.',
   })
   @IsString()
   @IsOptional()

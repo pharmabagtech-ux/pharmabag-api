@@ -160,6 +160,19 @@ export class ProductsService {
       }
     }
 
+    /**
+     * Every seller listing must be a listing OF a catalogue product.
+     *
+     * The seller supplies the commercial terms — price, stock, MOQ, expiry,
+     * discount — and the catalogue supplies the identity. Listings that matched
+     * nothing used to be created anyway as PENDING/inactive rows: invisible to
+     * buyers, never chased by anyone, and slowly accumulating. Sellers who
+     * cannot find their product are sent to the product-request flow instead,
+     * which admin already reviews.
+     *
+     * The name+manufacturer lookup stays as a fallback so callers that know the
+     * product but not its id (bulk import, older clients) still resolve.
+     */
     let masterProductId = normalized.masterProductId;
     if (!masterProductId) {
       const master = await this.prisma.masterProduct.findFirst({
@@ -170,6 +183,25 @@ export class ProductsService {
         },
       });
       if (master) masterProductId = master.id;
+    }
+
+    /**
+     * `isMigration` deliberately does NOT excuse an unlinked listing.
+     *
+     * It is an optional boolean on CreateProductDto and POST /products is
+     * seller-facing, so a gate that honoured it would hold only against sellers
+     * who did not think to send `{"isMigration": true}`. It keeps its other
+     * documented effects — relaxed image-URL validation, and the
+     * externalId/slug upsert path above — it just cannot conjure a catalogue
+     * entry. The one internal caller that sets it, seller-bulk-csv.service,
+     * always passes masterProductId as well, so nothing legitimate regresses.
+     */
+    if (!masterProductId) {
+      throw new BadRequestException(
+        `"${normalized.name}" is not in the PharmaBag catalogue yet. ` +
+          'Search for the product and pick it from the suggestions, or submit a ' +
+          'product request and we will add it to the catalogue.',
+      );
     }
 
     const isFromMaster = !!masterProductId;
@@ -234,8 +266,11 @@ export class ProductsService {
       maximumOrderQuantity: normalized.maximumOrderQuantity,
       discountType: normalized.discountType,
       discountMeta: normalized.discountMeta ?? undefined,
+      // Linked to the catalogue means approved — the product itself was already
+      // vetted when it entered the catalogue. Since the guard above, only
+      // migration rows can still land here unlinked, and those stay PENDING.
       approvalStatus: isFromMaster ? ProductApprovalStatus.APPROVED : ProductApprovalStatus.PENDING,
-      isActive: isFromMaster ? true : false, // Auto-approve if from master catalog
+      isActive: isFromMaster ? true : false,
     };
 
     const product = await this.prisma.product.create({
