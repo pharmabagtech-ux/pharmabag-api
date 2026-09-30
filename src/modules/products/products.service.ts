@@ -574,6 +574,9 @@ export class ProductsService {
   async update(userId: string, productId: string, dto: UpdateProductDto) {
     const product = await this.findOwnProduct(userId, productId);
 
+    this.assertListingIdentityUnchanged(product, dto);
+    this.assertMayActivate(product, dto);
+
     const { stock, expiryDate, images, ...productData } = dto;
 
     // Trim strings
@@ -1442,6 +1445,82 @@ export class ProductsService {
   // ──────────────────────────────────────────────
   // HELPERS
   // ──────────────────────────────────────────────
+
+  /**
+   * The identity of a listing belongs to the catalogue, not to the seller.
+   *
+   * update() used to pass name, manufacturer, chemicalComposition, categoryId
+   * and subCategoryId straight through to prisma.product.update, so the
+   * catalogue rule enforced in create() could be walked around in two requests:
+   * list a real catalogue product — auto-approved, active, visible to buyers —
+   * then PATCH the name to anything.
+   *
+   * Values are compared against THE ROW'S OWN current values, not the linked
+   * master's, for two reasons. The seller edit form rebuilds its whole payload
+   * on every save, so an ordinary price edit resends all five fields unchanged;
+   * rejecting on presence would break every edit in the portal, and only a value
+   * comparison can tell a resubmit from a rename. And some historical rows have
+   * drifted from their master's category, so comparing against the master would
+   * turn a data-quality problem into an outage for those sellers.
+   *
+   * Legacy listings with no master are frozen the same way, which is intended:
+   * they should never have existed and must not be edited into something new.
+   */
+  private assertListingIdentityUnchanged(
+    product: {
+      name: string;
+      manufacturer: string | null;
+      chemicalComposition: string | null;
+      categoryId: string;
+      subCategoryId: string;
+    },
+    dto: UpdateProductDto,
+  ) {
+    const changed = (incoming: string | undefined, current: string | null) =>
+      incoming !== undefined &&
+      incoming.trim().toLowerCase() !== (current ?? '').trim().toLowerCase();
+
+    const identityChanged =
+      changed(dto.name, product.name) ||
+      changed(dto.manufacturer, product.manufacturer) ||
+      changed(dto.chemicalComposition, product.chemicalComposition) ||
+      changed(dto.categoryId, product.categoryId) ||
+      changed(dto.subCategoryId, product.subCategoryId);
+
+    if (identityChanged) {
+      throw new BadRequestException(
+        "A listing's product details come from the PharmaBag catalogue and cannot be changed. " +
+          'Edit your price, stock, expiry or discount instead — or submit a product ' +
+          'request if the catalogue entry itself is wrong.',
+      );
+    }
+  }
+
+  /**
+   * A seller must not publish a listing nobody approved.
+   *
+   * isActive is on UpdateProductDto and flowed through update()'s
+   * ...productData spread untouched, so a seller sitting on a PENDING, inactive
+   * listing could PATCH {"isActive": true} and go live with no admin review —
+   * the approval gate was not a gate. Pre-existing, and independent of the
+   * catalogue rule.
+   *
+   * Deactivating stays allowed: pausing your own listing is legitimate, and
+   * there is no reason to make a seller ask.
+   */
+  private assertMayActivate(
+    product: { approvalStatus: ProductApprovalStatus },
+    dto: UpdateProductDto,
+  ) {
+    if (
+      dto.isActive === true &&
+      product.approvalStatus !== ProductApprovalStatus.APPROVED
+    ) {
+      throw new ForbiddenException(
+        'This listing has not been approved yet, so it cannot be made active.',
+      );
+    }
+  }
 
   /**
    * Find a product owned by the current seller, or throw.
