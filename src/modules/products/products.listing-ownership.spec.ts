@@ -145,8 +145,9 @@ describe('ProductsService.create — listing ownership', () => {
     });
 
     // Exactly what seller-bulk-csv.service.ts sends: no slug, no externalId,
-    // isMigration true. The slug is derived from the name and collides.
-    await service.create('user-b', dto({ isMigration: true }));
+    // isMigration true, and the id of the catalogue row it matched the CSV line
+    // against. The slug is derived from the name and collides.
+    await service.create('user-b', dto({ isMigration: true, masterProductId: 'master-1' }));
 
     expect(updated).toHaveLength(0);
     expect(created).toHaveLength(1);
