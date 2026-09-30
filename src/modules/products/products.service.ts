@@ -465,8 +465,13 @@ export class ProductsService {
       name: updated.name,
       manufacturer: updated.manufacturer,
       chemicalComposition: updated.chemicalComposition,
-      categoryName: category.name,
-      subCategoryName: subCategory.name,
+      // From the row, like the three fields above it — not from the DTO. This
+      // update no longer writes categoryId, so a DTO naming a different
+      // category would index the listing under a category it is not in, and a
+      // seller could choose where their listing surfaces in search just by
+      // sending another valid id.
+      categoryName: updated.category.name,
+      subCategoryName: updated.subCategory.name,
     });
 
     const batch = await this.prisma.productBatch.findFirst({

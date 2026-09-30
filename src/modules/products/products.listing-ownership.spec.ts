@@ -106,7 +106,16 @@ const makeService = (
       })(),
       update: async (args: any) => {
         updated.push(args);
-        return { id: args.where.id, name: 'x', slug: 's' };
+        // `category`/`subCategory` mirror the real query's `include`. The search
+        // index is labelled from the returned ROW rather than from the DTO, so a
+        // mock that omits them no longer matches production.
+        return {
+          id: args.where.id,
+          name: 'x',
+          slug: 's',
+          category: { name: 'Cat' },
+          subCategory: { name: 'Sub' },
+        };
       },
       create: async (args: any) => {
         created.push(args);

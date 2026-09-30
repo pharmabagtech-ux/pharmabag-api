@@ -109,6 +109,12 @@ const makeService = (
           chemicalComposition: 'Paracetamol',
           masterProductId:
             args.data.masterProduct?.connect?.id ?? existing.masterProductId,
+          // Mirrors the real query's `include`. The search index is labelled
+          // from the returned ROW rather than from the DTO, precisely so a DTO
+          // naming another category cannot decide where a listing surfaces in
+          // search — so the mock has to supply these.
+          category: { name: 'Ethical' },
+          subCategory: { name: 'Syrup' },
         };
       },
       create: async (args: any) => {
