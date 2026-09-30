@@ -724,6 +724,22 @@ export class AdminService {
       throw new BadRequestException('Product is already approved');
     }
 
+    /**
+     * Listings predating the catalogue rule have no master product, and the
+     * storefront grid queries MasterProduct — so approving one sets isActive
+     * without making it buyable, which is how the PENDING backlog grew. The
+     * rows are left in place deliberately; this just stops one being promoted
+     * into a visibility it cannot actually have. Rejection still works, so the
+     * backlog stays cleanable.
+     */
+    if (!product.masterProductId) {
+      throw new BadRequestException(
+        'This listing is not linked to a catalogue product, so approving it would ' +
+          'not make it visible to buyers. Add the product to the catalogue first, ' +
+          'then ask the seller to list it against that entry.',
+      );
+    }
+
     const updated = await this.prisma.product.update({
       where: { id: productId },
       data: {
