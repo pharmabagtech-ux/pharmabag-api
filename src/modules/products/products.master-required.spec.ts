@@ -26,8 +26,10 @@ import { CreateProductDto } from './dto/create-product.dto';
  *
  * These tests pin the rule and the two ways a listing legitimately resolves to
  * a master: an explicit id from the picker, and the name + manufacturer
- * fallback that bulk callers rely on. Migration mode keeps its old unlinked
- * behaviour so historical backfills still import.
+ * fallback that bulk callers rely on. Migration mode does not exempt a listing
+ * from this requirement either: `isMigration` is client-supplied on a
+ * seller-facing endpoint, so trusting it to skip the catalogue check would just
+ * be the same bypass wearing a different flag.
  */
 
 const SELLER = 'seller-1';
