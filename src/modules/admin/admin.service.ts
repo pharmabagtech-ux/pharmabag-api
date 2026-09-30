@@ -20,6 +20,7 @@ import {
 } from '@prisma/client';
 import { StorageService, sanitizeImageBaseName } from '../storage/storage.service';
 import { PrismaService } from '../../database/prisma.service';
+import { isApprovedForActivation } from '../../common/products/approval-rule';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { QuerySellersDto } from './dto/query-sellers.dto';
 import { AdminQueryProductsDto } from './dto/query-products.dto';
@@ -664,6 +665,11 @@ export class AdminService {
     if (payload.maximumOrderQuantity !== undefined && payload.maximumOrderQuantity !== "") updateData.maximumOrderQuantity = Number(payload.maximumOrderQuantity);
     if (payload.description !== undefined) updateData.description = payload.description;
     if (payload.gstPercent !== undefined && payload.gstPercent !== "") updateData.gstPercent = Number(payload.gstPercent);
+    // categoryId is catalogue-owned (see the seller-side identity freeze in
+    // ProductsService) — an admin can still re-categorise a listing away
+    // from its MasterProduct here, with no check. Pre-existing, and admins
+    // are trusted, but the right fix is to correct the category on the
+    // MasterProduct itself, not on one seller's listing of it.
     if (payload.categoryId && payload.categoryId !== "") updateData.category = { connect: { id: payload.categoryId } };
 
     return this.prisma.product.update({
@@ -702,7 +708,7 @@ export class AdminService {
       );
     }
 
-    if (product.approvalStatus !== ProductApprovalStatus.APPROVED) {
+    if (!isApprovedForActivation(product.approvalStatus)) {
       throw new BadRequestException(
         'This listing has not been approved, so it cannot be enabled directly. ' +
           'Use the approve endpoint instead, which reviews and activates it together.',

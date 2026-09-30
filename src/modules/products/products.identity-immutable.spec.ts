@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { ProductApprovalStatus } from '@prisma/client';
 import { ProductsService } from './products.service';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -24,7 +24,9 @@ import { UpdateProductDto } from './dto/update-product.dto';
  * isActive is on UpdateProductDto and flowed through the ...productData spread
  * untouched, so a seller on a PENDING listing could PATCH {"isActive": true} and
  * publish without review. Deactivating stays allowed — pausing your own listing
- * is legitimate.
+ * is legitimate. Rejected with BadRequestException, not ForbiddenException: it
+ * is the row's approval state that is wrong, not who is asking, the same kind
+ * of rule as the identity freeze above.
  */
 
 const CURRENT = {
@@ -188,7 +190,7 @@ describe('ProductsService.update — a seller cannot publish an unapproved listi
 
     await expect(
       service.update('user-1', 'product-1', dto({ isActive: true })),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(updated).toHaveLength(0);
   });
@@ -200,7 +202,7 @@ describe('ProductsService.update — a seller cannot publish an unapproved listi
 
     await expect(
       service.update('user-1', 'product-1', dto({ isActive: true })),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('allows isActive:true on an approved listing', async () => {
