@@ -27,6 +27,18 @@ export class UpdateProductDto {
   @MaxLength(255)
   name?: string;
 
+  @ApiPropertyOptional({
+    example: 'uuid-of-master-product',
+    description:
+      'The catalogue product this listing is for. Accepted only so that the ' +
+      'seller edit form, which rebuilds its whole payload on every save, is not ' +
+      'rejected outright by the global whitelist — it must equal the value the ' +
+      'listing already holds. The link is never rewritten from here.',
+  })
+  @IsString()
+  @IsOptional()
+  masterProductId?: string;
+
   @ApiPropertyOptional({ example: 'uuid-of-category' })
   @IsString()
   @IsOptional()

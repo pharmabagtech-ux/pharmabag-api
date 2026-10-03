@@ -628,7 +628,12 @@ export class ProductsService {
     this.assertListingIdentityUnchanged(product, dto);
     this.assertMayActivate(product, dto);
 
-    const { stock, expiryDate, images, ...productData } = dto;
+    // masterProductId is pulled out and dropped, not written. It is on the DTO
+    // only so the seller form's full-payload resubmit survives the global
+    // whitelist; assertListingIdentityUnchanged has already established it
+    // matches the row. Leaving it in the spread below would let a seller move
+    // an approved, live listing onto a different catalogue product.
+    const { stock, expiryDate, images, masterProductId: _masterProductId, ...productData } = dto;
 
     // Trim strings
     if (productData.name) productData.name = productData.name.trim();
@@ -1502,10 +1507,16 @@ export class ProductsService {
    * (see products.identity-immutable.spec.ts for the full history).
    *
    * Compares against THE ROW'S OWN current values, not the linked master's:
-   * the seller edit form resends all five fields unchanged on every save, so
+   * the seller edit form resends all six fields unchanged on every save, so
    * only a value comparison — not a presence check — can tell a resubmit
    * from a rename, and comparing against the master would also catch
    * historical rows whose category has already drifted from it.
+   *
+   * masterProductId is checked here for the same reason as the other five, but
+   * it is the catalogue link itself rather than a copy of what the catalogue
+   * said, so update() additionally keeps it out of the prisma write — see
+   * products.master-link-immutable.spec.ts. Sending one for a legacy row that
+   * has none is a re-point too: linking is admin's call, not a seller's.
    */
   private assertListingIdentityUnchanged(
     product: {
@@ -1514,6 +1525,7 @@ export class ProductsService {
       chemicalComposition: string | null;
       categoryId: string;
       subCategoryId: string;
+      masterProductId: string | null;
     },
     dto: UpdateProductDto,
   ) {
@@ -1526,7 +1538,8 @@ export class ProductsService {
       changed(dto.manufacturer, product.manufacturer) ||
       changed(dto.chemicalComposition, product.chemicalComposition) ||
       changed(dto.categoryId, product.categoryId) ||
-      changed(dto.subCategoryId, product.subCategoryId);
+      changed(dto.subCategoryId, product.subCategoryId) ||
+      changed(dto.masterProductId, product.masterProductId);
 
     if (identityChanged) {
       throw new BadRequestException(
