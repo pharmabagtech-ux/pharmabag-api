@@ -140,6 +140,7 @@ model Category {
   masterProducts MasterProduct[]
   products       Product[]
   subCategories  SubCategory[]
+  bannerPlacements PromoBannerPlacement[]
 
   @@map("categories")
 }
@@ -719,6 +720,54 @@ model MarketingProduct {
 enum MarketingSlot {
   HOMEPAGE_CAROUSEL
   LOGIN_CAROUSEL
+}
+
+/// A promotional image strip rendered under the storefront header.
+///
+/// The image IS the content — there are no text fields to render — which is
+/// why altText is required rather than optional: it is the only textual
+/// representation this banner will ever have, for screen readers and for
+/// anything that reads the page without loading images.
+model PromoBanner {
+  id             String                 @id @default(uuid())
+  title          String
+  imageUrl       String
+  mobileImageUrl String?
+  altText        String
+  linkUrl        String?
+  active         Boolean                @default(true)
+  position       Int                    @default(0)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  placements     PromoBannerPlacement[]
+
+  @@index([active, position])
+  @@map("promo_banners")
+}
+
+/// Where one banner is shown.
+///
+/// A real foreign key to Category rather than a string token on the banner, so
+/// deleting a category removes its targeting instead of leaving a dangling id
+/// that silently matches nothing and shows an admin a placement that no longer
+/// exists.
+model PromoBannerPlacement {
+  id         String      @id @default(uuid())
+  bannerId   String
+  scope      BannerScope
+  categoryId String?
+  banner     PromoBanner @relation(fields: [bannerId], references: [id], onDelete: Cascade)
+  category   Category?   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([bannerId, scope, categoryId])
+  @@index([scope, categoryId])
+  @@map("promo_banner_placements")
+}
+
+enum BannerScope {
+  HOMEPAGE
+  ALL_CATEGORIES
+  CATEGORY
 }
 
 enum Role {
