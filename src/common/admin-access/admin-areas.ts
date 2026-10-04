@@ -92,6 +92,7 @@ export const ADMIN_AREA_RULES: readonly AreaRule[] = [
   // still attach an image to a post without being handed product uploads.
   rule(/^\/storage\/product-image$/, 'products'),
   rule(/^\/storage\/blog-image$/, 'blogs'),
+  rule(/^\/storage\/banner-image$/, 'marketing'),
   rule(/^\/storage\/payment-proof$/, 'payments'),
   rule(/^\/storage\/settlement-proof$/, 'settlements'),
   rule(/^\/storage\/(drug-license|kyc)$/, 'users'),
@@ -139,6 +140,9 @@ export const ADMIN_AREA_RULES: readonly AreaRule[] = [
   rule(/^\/admin\/blogs/, 'blogs'),
   rule(/^\/blog/, 'blogs'),
   rule(/^\/admin\/marketing/, 'marketing'),
+  // Promo banner strip. Filed under Marketing, which is where the admin app
+  // puts it and what the legacy 'v' permission character already named.
+  rule(/^\/admin\/banners/, 'marketing'),
   rule(/^\/admin\/suggestions/, 'suggestions'),
 
   // ── SEO ────────────────────────────────────────────────────────────────

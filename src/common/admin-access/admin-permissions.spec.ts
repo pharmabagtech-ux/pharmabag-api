@@ -276,3 +276,29 @@ describe('describeCapabilities — what the admin app renders from', () => {
     );
   });
 });
+
+/**
+ * An admin-only route matching no rule is DENIED for every scoped admin — the
+ * header of admin-areas.ts states that, and it is the safe direction. These
+ * two routes arrived with the promo banner feature. Without rules the Banners
+ * screen renders (the web app's mirrored map lets it through) and then every
+ * request behind it 403s, which is exactly the failure mode the mirror warning
+ * in apps/admin/lib/admin-areas.ts describes.
+ */
+describe('promo banner routes belong to the marketing area', () => {
+  it('maps the admin banner CRUD routes', () => {
+    expect(areaForRoute('GET', '/admin/banners')).toBe('marketing');
+    expect(areaForRoute('POST', '/admin/banners')).toBe('marketing');
+    expect(areaForRoute('PATCH', '/admin/banners/reorder')).toBe('marketing');
+    expect(areaForRoute('PATCH', '/admin/banners/settings')).toBe('marketing');
+    expect(areaForRoute('DELETE', '/admin/banners/abc-123')).toBe('marketing');
+  });
+
+  it('maps the banner image upload to marketing, not to products', () => {
+    expect(areaForRoute('POST', '/storage/banner-image')).toBe('marketing');
+  });
+
+  it('still maps through the global api prefix', () => {
+    expect(areaForRoute('GET', '/api/admin/banners')).toBe('marketing');
+  });
+});
