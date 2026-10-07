@@ -175,6 +175,17 @@ export class StorageService {
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
   }
 
+  /**
+   * Promo banner artwork. A public URL, like blog images — the storefront
+   * renders these for logged-out visitors, so a signed URL would expire
+   * mid-page and leave the strip broken.
+   */
+  async uploadBannerImage(file: Express.Multer.File): Promise<string> {
+    this.validateFile(file, this.ALLOWED_IMAGE_TYPES);
+    const key = await this.upload(file, 'banner-images');
+    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+  }
+
   async uploadSettlementProof(file: Express.Multer.File): Promise<string> {
     this.validateFile(file, this.ALLOWED_DOC_TYPES);
     const key = await this.upload(file, 'settlement-proofs');

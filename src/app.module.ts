@@ -35,6 +35,7 @@ import { WebAnalyticsModule } from './modules/web-analytics/web-analytics.module
 import { SiteSettingsModule } from './modules/site-settings/site-settings.module';
 import { RedirectsModule } from './modules/redirects/redirects.module';
 import { PageSeoModule } from './modules/page-seo/page-seo.module';
+import { BannersModule } from './modules/banners/banners.module';
 
 @Module({
   imports: [
@@ -115,6 +116,7 @@ import { PageSeoModule } from './modules/page-seo/page-seo.module';
     SiteSettingsModule,
     RedirectsModule,
     PageSeoModule,
+    BannersModule,
   ],
   providers: [
     // Apply throttler guard globally

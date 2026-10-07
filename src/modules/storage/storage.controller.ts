@@ -112,6 +112,20 @@ export class StorageController {
     return { message: 'Blog image uploaded', data: { url } };
   }
 
+  @Post('banner-image')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @UseInterceptors(FileInterceptor('file', multerOptions))
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Upload promo banner artwork (admin)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody(fileUploadBody)
+  @ApiResponse({ status: 201, description: 'Image uploaded, URL returned' })
+  async uploadBannerImage(@UploadedFile() file: Express.Multer.File) {
+    const url = await this.storageService.uploadBannerImage(file);
+    return { message: 'Banner image uploaded', data: { url } };
+  }
+
   @Post('settlement-proof')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
