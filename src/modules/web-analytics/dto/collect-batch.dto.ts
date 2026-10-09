@@ -112,4 +112,18 @@ export class CollectBatchDto {
   @IsString()
   @MaxLength(500)
   ua?: string;
+
+  /**
+   * Client IP, attached server-side by the buyer app's /api/track proxy from
+   * its own X-Forwarded-For chain — never sent by the client tracker.
+   *
+   * Used only to resolve country/state/city at ingest and then discarded: it
+   * is never written to the database. A client could forge this, which is
+   * acceptable for analytics (the whole payload is self-reported) and is not
+   * an authorization boundary.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  ip?: string;
 }

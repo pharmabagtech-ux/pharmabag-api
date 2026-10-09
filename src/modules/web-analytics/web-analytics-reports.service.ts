@@ -255,4 +255,281 @@ export class WebAnalyticsReportsService {
       lowEngagementPct: humanSessions > 0 ? Math.round((lowEngagementSessions / humanSessions) * 1000) / 10 : 0,
     };
   }
+
+  /* ------------------------------------------------------------------ *
+   * Geography
+   *
+   * India-first by design: PharmaBag sells to licensed Indian businesses, so
+   * the useful breakdown is by state and city within India, with the rest of
+   * the world collapsed into a single comparison row. States and cities are
+   * therefore filtered to countryCode = 'IN' — mixing a Gujarat row and a
+   * Dubai row into one "regions" list would make neither readable.
+   *
+   * Sessions with no resolved location surface as 'Unknown' rather than being
+   * dropped, so these totals stay reconcilable with the traffic report.
+   * ------------------------------------------------------------------ */
+
+  async geography(range: TrafficRange): Promise<{
+    countries: Array<{ name: string; code: string | null; visitors: number; sessions: number }>;
+    states: Array<{ name: string; code: string | null; visitors: number; sessions: number }>;
+    cities: Array<{ name: string; region: string | null; visitors: number; sessions: number }>;
+    coverage: { resolvedSessions: number; unresolvedSessions: number; resolvedPct: number };
+  }> {
+    const [countries, states, cities, coverage] = await Promise.all([
+      this.countries(range),
+      this.indiaStates(range),
+      this.indiaCities(range),
+      this.geoCoverage(range),
+    ]);
+    return { countries, states, cities, coverage };
+  }
+
+  private countries({ from, to }: TrafficRange) {
+    return this.prisma
+      .$queryRaw<Array<{ name: string | null; code: string | null; visitors: bigint; sessions: bigint }>>(Prisma.sql`
+        SELECT COALESCE(s."country", 'Unknown') AS name,
+               MAX(s."countryCode") AS code,
+               COUNT(DISTINCT s."visitorId") AS visitors,
+               COUNT(*) AS sessions
+        FROM "analytics_sessions" s
+        WHERE s."startedAt" >= ${from} AND s."startedAt" < ${to} AND s."isBot" = false
+        GROUP BY COALESCE(s."country", 'Unknown')
+        ORDER BY sessions DESC
+        LIMIT 100
+      `)
+      .then((rows) =>
+        rows.map((r) => ({
+          name: r.name ?? 'Unknown',
+          code: r.code ?? null,
+          visitors: toNumber(r.visitors),
+          sessions: toNumber(r.sessions),
+        })),
+      )
+      .catch((err) => {
+        this.logger.error('geography: countries query failed', err);
+        return [] as Array<{ name: string; code: string | null; visitors: number; sessions: number }>;
+      });
+  }
+
+  private indiaStates({ from, to }: TrafficRange) {
+    return this.prisma
+      .$queryRaw<Array<{ name: string | null; code: string | null; visitors: bigint; sessions: bigint }>>(Prisma.sql`
+        SELECT COALESCE(s."region", 'Unknown') AS name,
+               MAX(s."regionCode") AS code,
+               COUNT(DISTINCT s."visitorId") AS visitors,
+               COUNT(*) AS sessions
+        FROM "analytics_sessions" s
+        WHERE s."startedAt" >= ${from} AND s."startedAt" < ${to}
+          AND s."isBot" = false
+          AND s."countryCode" = 'IN'
+        GROUP BY COALESCE(s."region", 'Unknown')
+        ORDER BY sessions DESC
+        LIMIT 60
+      `)
+      .then((rows) =>
+        rows.map((r) => ({
+          name: r.name ?? 'Unknown',
+          code: r.code ?? null,
+          visitors: toNumber(r.visitors),
+          sessions: toNumber(r.sessions),
+        })),
+      )
+      .catch((err) => {
+        this.logger.error('geography: states query failed', err);
+        return [] as Array<{ name: string; code: string | null; visitors: number; sessions: number }>;
+      });
+  }
+
+  private indiaCities({ from, to }: TrafficRange) {
+    return this.prisma
+      .$queryRaw<Array<{ name: string | null; region: string | null; visitors: bigint; sessions: bigint }>>(Prisma.sql`
+        SELECT s."city" AS name,
+               MAX(s."region") AS region,
+               COUNT(DISTINCT s."visitorId") AS visitors,
+               COUNT(*) AS sessions
+        FROM "analytics_sessions" s
+        WHERE s."startedAt" >= ${from} AND s."startedAt" < ${to}
+          AND s."isBot" = false
+          AND s."countryCode" = 'IN'
+          AND s."city" IS NOT NULL
+        GROUP BY s."city"
+        ORDER BY sessions DESC
+        LIMIT 100
+      `)
+      .then((rows) =>
+        rows.map((r) => ({
+          name: r.name ?? 'Unknown',
+          region: r.region ?? null,
+          visitors: toNumber(r.visitors),
+          sessions: toNumber(r.sessions),
+        })),
+      )
+      .catch((err) => {
+        this.logger.error('geography: cities query failed', err);
+        return [] as Array<{ name: string; region: string | null; visitors: number; sessions: number }>;
+      });
+  }
+
+  /**
+   * How much of the traffic actually got a location. Surfaced in the UI so a
+   * half-empty report reads as "geo database missing or IPs unresolvable",
+   * not as "nobody visited from anywhere".
+   */
+  private geoCoverage({ from, to }: TrafficRange) {
+    return this.prisma
+      .$queryRaw<Array<{ resolved: bigint; unresolved: bigint }>>(Prisma.sql`
+        SELECT COUNT(*) FILTER (WHERE s."countryCode" IS NOT NULL) AS resolved,
+               COUNT(*) FILTER (WHERE s."countryCode" IS NULL) AS unresolved
+        FROM "analytics_sessions" s
+        WHERE s."startedAt" >= ${from} AND s."startedAt" < ${to} AND s."isBot" = false
+      `)
+      .then((rows) => {
+        const resolvedSessions = toNumber(rows[0]?.resolved);
+        const unresolvedSessions = toNumber(rows[0]?.unresolved);
+        const total = resolvedSessions + unresolvedSessions;
+        return {
+          resolvedSessions,
+          unresolvedSessions,
+          resolvedPct: total > 0 ? Math.round((resolvedSessions / total) * 1000) / 10 : 0,
+        };
+      })
+      .catch((err) => {
+        this.logger.error('geography: coverage query failed', err);
+        return { resolvedSessions: 0, unresolvedSessions: 0, resolvedPct: 0 };
+      });
+  }
+
+  /**
+   * Where the visitors to one product came from.
+   *
+   * Matched on EITHER the event's `productId` or the product page's path,
+   * OR'd together, because the two identify the same traffic by different
+   * means and each alone has a gap:
+   *
+   *  - `productId` is precise but only present on events the tracker tags with
+   *    a product, which nothing emitted until now — so on its own it would
+   *    report nothing for every historical visit.
+   *  - `page` has been recorded for every page view since tracking began, so
+   *    matching `/products/<slug>` works retroactively. But it breaks if the
+   *    slug is later renamed (bulk uploads do rewrite slugs, which is why the
+   *    redirects manager exists), and it cannot see product interest expressed
+   *    anywhere other than the detail page.
+   *
+   * Together they cover both: existing data is readable immediately via the
+   * path, and precision improves as product-tagged events accumulate.
+   * `DISTINCT e."visitorId"` keeps a visitor counted once even when both
+   * predicates match the same event.
+   *
+   * `views` counts matching events; `visitors` counts distinct people, which is
+   * the number to compare cities on, since one buyer refreshing repeatedly
+   * would otherwise look like a city full of demand.
+   */
+  async productGeography(
+    match: { productId?: string; path?: string },
+    { from, to }: TrafficRange,
+  ): Promise<{
+    totals: { views: number; visitors: number };
+    countries: Array<{ name: string; visitors: number; views: number }>;
+    states: Array<{ name: string; visitors: number; views: number }>;
+    cities: Array<{ name: string; region: string | null; visitors: number; views: number }>;
+  }> {
+    const empty = {
+      totals: { views: 0, visitors: 0 },
+      countries: [] as Array<{ name: string; visitors: number; views: number }>,
+      states: [] as Array<{ name: string; visitors: number; views: number }>,
+      cities: [] as Array<{ name: string; region: string | null; visitors: number; views: number }>,
+    };
+
+    // Guard rather than build `WHERE (false)`: with neither identifier the
+    // honest answer is "no data", not every event ever recorded.
+    const predicates: Prisma.Sql[] = [];
+    if (match.productId) predicates.push(Prisma.sql`e."productId" = ${match.productId}`);
+    if (match.path) predicates.push(Prisma.sql`e."page" = ${match.path}`);
+    if (predicates.length === 0) return empty;
+
+    const identifies = predicates.reduce((acc, p, i) => (i === 0 ? p : Prisma.sql`${acc} OR ${p}`));
+
+    const base = Prisma.sql`
+      FROM "analytics_events" e
+      JOIN "analytics_sessions" s ON s."id" = e."sessionId"
+      WHERE (${identifies})
+        AND e."ts" >= ${from} AND e."ts" < ${to}
+        AND e."isBot" = false
+        AND s."isBot" = false
+    `;
+
+    const [totals, countries, states, cities] = await Promise.all([
+      this.prisma
+        .$queryRaw<Array<{ views: bigint; visitors: bigint }>>(Prisma.sql`
+          SELECT COUNT(*) AS views, COUNT(DISTINCT e."visitorId") AS visitors ${base}
+        `)
+        .then((rows) => ({ views: toNumber(rows[0]?.views), visitors: toNumber(rows[0]?.visitors) }))
+        .catch((err) => {
+          this.logger.error('productGeography: totals query failed', err);
+          return { views: 0, visitors: 0 };
+        }),
+
+      this.prisma
+        .$queryRaw<Array<{ name: string | null; visitors: bigint; views: bigint }>>(Prisma.sql`
+          SELECT COALESCE(s."country", 'Unknown') AS name,
+                 COUNT(DISTINCT e."visitorId") AS visitors,
+                 COUNT(*) AS views
+          ${base}
+          GROUP BY COALESCE(s."country", 'Unknown')
+          ORDER BY visitors DESC
+          LIMIT 50
+        `)
+        .then((rows) =>
+          rows.map((r) => ({ name: r.name ?? 'Unknown', visitors: toNumber(r.visitors), views: toNumber(r.views) })),
+        )
+        .catch((err) => {
+          this.logger.error('productGeography: countries query failed', err);
+          return [] as Array<{ name: string; visitors: number; views: number }>;
+        }),
+
+      this.prisma
+        .$queryRaw<Array<{ name: string | null; visitors: bigint; views: bigint }>>(Prisma.sql`
+          SELECT COALESCE(s."region", 'Unknown') AS name,
+                 COUNT(DISTINCT e."visitorId") AS visitors,
+                 COUNT(*) AS views
+          ${base} AND s."countryCode" = 'IN'
+          GROUP BY COALESCE(s."region", 'Unknown')
+          ORDER BY visitors DESC
+          LIMIT 60
+        `)
+        .then((rows) =>
+          rows.map((r) => ({ name: r.name ?? 'Unknown', visitors: toNumber(r.visitors), views: toNumber(r.views) })),
+        )
+        .catch((err) => {
+          this.logger.error('productGeography: states query failed', err);
+          return [] as Array<{ name: string; visitors: number; views: number }>;
+        }),
+
+      this.prisma
+        .$queryRaw<Array<{ name: string | null; region: string | null; visitors: bigint; views: bigint }>>(Prisma.sql`
+          SELECT s."city" AS name,
+                 MAX(s."region") AS region,
+                 COUNT(DISTINCT e."visitorId") AS visitors,
+                 COUNT(*) AS views
+          ${base} AND s."countryCode" = 'IN' AND s."city" IS NOT NULL
+          GROUP BY s."city"
+          ORDER BY visitors DESC
+          LIMIT 100
+        `)
+        .then((rows) =>
+          rows.map((r) => ({
+            name: r.name ?? 'Unknown',
+            region: r.region ?? null,
+            visitors: toNumber(r.visitors),
+            views: toNumber(r.views),
+          })),
+        )
+        .catch((err) => {
+          this.logger.error('productGeography: cities query failed', err);
+          return [] as Array<{ name: string; region: string | null; visitors: number; views: number }>;
+        }),
+    ]);
+
+    return { totals, countries, states, cities };
+  }
 }

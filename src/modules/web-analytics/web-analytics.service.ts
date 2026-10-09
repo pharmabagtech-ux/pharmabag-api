@@ -5,6 +5,7 @@ import { CollectBatchDto } from './dto/collect-batch.dto';
 import { isBotUserAgent } from './bot-detector';
 import { classifySource } from './source-classifier';
 import { parseDeviceOsBrowser } from './ua-parser';
+import { resolveGeo } from './geo-resolver';
 
 @Injectable()
 export class WebAnalyticsService {
@@ -22,6 +23,12 @@ export class WebAnalyticsService {
     const now = new Date();
     const pageViewCount = batch.events.filter((e) => e.name === 'page_view').length;
     const lastEvent = batch.events[batch.events.length - 1];
+
+    // Resolved before opening the transaction: the first call may read a ~70MB
+    // database off disk, and holding a Postgres transaction open across that
+    // would pin a connection for no reason. Subsequent lookups are in-memory.
+    // Never throws — returns all-null geo if the database is absent.
+    const geo = await resolveGeo(batch.ip);
 
     await this.prisma.$transaction(async (tx) => {
       const existingVisitor = await tx.webVisitor.findUnique({ where: { id: batch.visitor.id } });
@@ -83,6 +90,11 @@ export class WebAnalyticsService {
             deviceType: ua.deviceType,
             os: ua.os,
             browser: ua.browser,
+            countryCode: geo.countryCode,
+            country: geo.country,
+            region: geo.region,
+            regionCode: geo.regionCode,
+            city: geo.city,
           },
         });
       } else {
@@ -94,6 +106,20 @@ export class WebAnalyticsService {
             events: { increment: batch.events.length },
             ...(lastEvent?.page ? { exitPage: lastEvent.page } : {}),
             ...(batch.session.userId ? { userId: batch.session.userId } : {}),
+            // Fill geo in later if the session was created without it — the
+            // case when the GeoLite2 database is installed while sessions are
+            // already in flight. Never overwrites a location we already have,
+            // so a resolved session cannot be downgraded to null by a later
+            // batch whose IP header was missing.
+            ...(!existingSession.countryCode && geo.countryCode
+              ? {
+                  countryCode: geo.countryCode,
+                  country: geo.country,
+                  region: geo.region,
+                  regionCode: geo.regionCode,
+                  city: geo.city,
+                }
+              : {}),
           },
         });
       }

@@ -986,6 +986,17 @@ model WebSession {
   os             String?
   browser        String?
 
+  /// Location resolved from the visitor's IP at ingest (GeoLite2). The IP
+  /// itself is deliberately never stored. Null on sessions recorded before
+  /// geo was enabled, or when the address was private/unknown — reported as
+  /// "Unknown" rather than dropped.
+  countryCode    String?
+  country        String?
+  /// First-level subdivision: an Indian state for domestic traffic.
+  region         String?
+  regionCode     String?
+  city           String?
+
   @@index([visitorId])
   @@index([lastEventAt])
   @@index([sourceCategory, startedAt])
@@ -993,6 +1004,11 @@ model WebSession {
   @@index([deviceType, startedAt])
   @@index([os, startedAt])
   @@index([browser, startedAt])
+  // Geo reports always filter by date first, so date is the trailing column
+  // in each of these composites.
+  @@index([countryCode, startedAt])
+  @@index([region, startedAt])
+  @@index([city, startedAt])
   @@map("analytics_sessions")
 }
 
