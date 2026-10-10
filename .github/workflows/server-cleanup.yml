@@ -1,0 +1,42 @@
+name: Server disk cleanup (manual)
+
+# One-off maintenance: the 2026-10-09 deploy failed with ENOSPC and the box
+# has since gone to zero free bytes. This frees cache/log space ONLY — it
+# deliberately never touches the app tree, the .env, Postgres, or PM2's
+# process state (dist/ is gone until the next successful deploy, so a
+# pm2 restart here would take the API down).
+#
+# Manual trigger only. Safe to delete this file once the box is healthy.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk space on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "===== BEFORE ====="
+            df -h /
+            echo
+            echo "===== Largest items under HOME (depth 2) ====="
+            du -xh --max-depth=2 "$HOME" 2>/dev/null | sort -rh | head -15
+            echo
+            echo "===== PM2 log sizes ====="
+            du -sh "$HOME/.pm2/logs" 2>/dev/null || true
+            echo
+            echo "===== Cleaning ====="
+            pm2 flush || true
+            npm cache clean --force || true
+            rm -rf "$HOME/.cache/prisma" || true
+            sudo journalctl --vacuum-size=200M || true
+            sudo apt-get clean || true
+            echo
+            echo "===== AFTER ====="
+            df -h /
