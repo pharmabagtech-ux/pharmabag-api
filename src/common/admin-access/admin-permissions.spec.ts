@@ -3,7 +3,12 @@ import {
   canAccessArea,
   describeCapabilities,
 } from './admin-permissions';
-import { areaForRoute, levelForMethod, ADMIN_AREAS } from './admin-areas';
+import {
+  areaForRoute,
+  levelForMethod,
+  ADMIN_AREAS,
+  isAlwaysAllowedForAdmins,
+} from './admin-areas';
 
 /**
  * Admin permissions were enforced only in the browser: the React app checked a
@@ -209,7 +214,6 @@ describe('areaForRoute — every admin route is claimed', () => {
     ['POST', '/api/storage/payment-proof', 'payments'],
     ['POST', '/api/storage/settlement-proof', 'settlements'],
     ['POST', '/api/storage/kyc', 'users'],
-    ['POST', '/api/storage/view', 'dashboard'],
   ];
 
   it.each(routes)('%s %s belongs to %s', (method, path, expected) => {
@@ -300,5 +304,31 @@ describe('promo banner routes belong to the marketing area', () => {
 
   it('still maps through the global api prefix', () => {
     expect(areaForRoute('GET', '/api/admin/banners')).toBe('marketing');
+  });
+});
+
+/**
+ * /storage/view presigns a key the admin already received from an area-gated
+ * data endpoint — refusing it only breaks rendering of documents the admin
+ * was allowed to see. It sat on the 'dashboard' area until 2026-10-10, which
+ * denied every v2 scoped admin whose grant did not name dashboard (and it is
+ * a POST, so even dashboard:read failed). Symptom in the field: an admin
+ * opened a buyer, the licence thumbnails failed to presign, and the UI's
+ * fallback produced api.pharmabag.in/drug-licenses/<uuid>.pdf — a 404.
+ */
+describe('/storage/view is reachable by every signed-in admin', () => {
+  it('is always allowed, with and without the api prefix', () => {
+    expect(isAlwaysAllowedForAdmins('/storage/view')).toBe(true);
+    expect(isAlwaysAllowedForAdmins('/api/storage/view')).toBe(true);
+  });
+
+  it('no longer claims an area, so nothing else can shadow the allowance', () => {
+    expect(areaForRoute('POST', '/storage/view')).toBeNull();
+  });
+
+  it('does not open its siblings: uploads stay area-gated', () => {
+    expect(isAlwaysAllowedForAdmins('/storage/kyc')).toBe(false);
+    expect(isAlwaysAllowedForAdmins('/storage/banner-image')).toBe(false);
+    expect(areaForRoute('POST', '/storage/kyc')).toBe('users');
   });
 });
