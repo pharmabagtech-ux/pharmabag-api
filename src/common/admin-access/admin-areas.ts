@@ -96,10 +96,15 @@ export const ADMIN_AREA_RULES: readonly AreaRule[] = [
   rule(/^\/storage\/payment-proof$/, 'payments'),
   rule(/^\/storage\/settlement-proof$/, 'settlements'),
   rule(/^\/storage\/(drug-license|kyc)$/, 'users'),
-  // Fetching a signed URL for something already uploaded. Every area needs it,
-  // and it reveals nothing on its own, so it rides on the dashboard grant that
-  // any admin holds.
-  rule(/^\/storage\/view$/, 'dashboard'),
+  // NOTE: /storage/view used to be mapped here to 'dashboard', on the
+  // assumption that "any admin holds dashboard". That is true for LEGACY
+  // grants (dashboard is grandfathered) but false for v2 scoped grants, where
+  // anything not named is denied — and it is a POST, so even dashboard:read
+  // was not enough. The result: a scoped admin opened a buyer, the licence
+  // thumbnails failed to presign, and the UI fell back to a fabricated URL
+  // that 404'd. It now lives in ALWAYS_ALLOWED below: exchanging a key the
+  // admin already received from a gated data endpoint for a short-lived link
+  // reveals nothing on its own, which was this rule's stated intent all along.
 
   // ── Bulk catalogue import/export ───────────────────────────────────────
   rule(/^\/master-products\/bulk/, 'csv-upload'),
@@ -163,12 +168,25 @@ export const ADMIN_AREA_RULES: readonly AreaRule[] = [
 /**
  * Routes every signed-in admin may reach regardless of their grant.
  *
- * Only one thing qualifies: asking what you are allowed to do. The admin app
- * builds its sidebar and route guard from that answer, so an admin who could
- * not fetch it would be locked out of the whole console rather than the parts
- * they lack.
+ * Two things qualify:
+ *
+ *  - Asking what you are allowed to do. The admin app builds its sidebar and
+ *    route guard from that answer, so an admin who could not fetch it would
+ *    be locked out of the whole console rather than the parts they lack.
+ *
+ *  - Exchanging a storage key for a short-lived signed URL. The key itself
+ *    only ever arrives through a data endpoint that IS area-gated (a buyer's
+ *    licence via 'users', a payment proof via 'payments', ...), so the gate
+ *    already happened; refusing the exchange here only breaks the rendering
+ *    of documents the admin was allowed to see. It sat on the 'dashboard'
+ *    area until 2026-10-10, which denied every v2 scoped admin whose grant
+ *    did not name dashboard — their licence thumbnails failed to presign and
+ *    the UI showed a 404 instead.
  */
-const ALWAYS_ALLOWED = [/^\/admin\/dashboard\/my-permissions$/];
+const ALWAYS_ALLOWED = [
+  /^\/admin\/dashboard\/my-permissions$/,
+  /^\/storage\/view$/,
+];
 
 export function isAlwaysAllowedForAdmins(path: string): boolean {
   const normalised = normaliseRoutePath(path);
