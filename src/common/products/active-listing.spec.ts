@@ -11,9 +11,27 @@ import { ACTIVE_LISTING, activeListing } from './active-listing';
  * that this codebase has twice shipped a listing rule to some surfaces and not
  * others (the 20k minimum, the scheme lot stepping).
  */
+/**
+ * The same gap again, one field over. Blocking a seller set User.status =
+ * BLOCKED, which auth reads (they cannot log in) — but no storefront query
+ * read it, so a blocked seller's listings stayed visible AND purchasable.
+ * Verified from production: seller 8985505636 showed BLOCKED in
+ * admin.pharmabag.in/users?status=BLOCKED while its offers were still live
+ * under "2 VERIFIED SELLERS" on the public product page.
+ *
+ * Blocking is the tool the delete guard tells admins to reach for
+ * (admin.delete-user-guard.spec.ts), so it has to actually take a seller off
+ * the storefront.
+ */
 describe('ACTIVE_LISTING', () => {
   it('requires the seller not to be on vacation', () => {
-    expect(ACTIVE_LISTING.seller).toEqual({ isVacation: false });
+    expect((ACTIVE_LISTING.seller as any).isVacation).toBe(false);
+  });
+
+  it('excludes listings whose seller account is blocked', () => {
+    expect((ACTIVE_LISTING.seller as any).user).toEqual({
+      status: { not: 'BLOCKED' },
+    });
   });
 
   it('still requires the listing to be active and not deleted', () => {
@@ -21,19 +39,26 @@ describe('ACTIVE_LISTING', () => {
     expect(ACTIVE_LISTING.deletedAt).toBeNull();
   });
 
-  it('carries all three conditions, so none can be applied without the others', () => {
+  it('carries all four conditions, so none can be applied without the others', () => {
     expect(Object.keys(ACTIVE_LISTING).sort()).toEqual([
       'deletedAt',
       'isActive',
       'seller',
     ]);
+    expect(Object.keys(ACTIVE_LISTING.seller as any).sort()).toEqual([
+      'isVacation',
+      'user',
+    ]);
   });
 });
 
 describe('activeListing()', () => {
-  it('merges extra conditions without dropping the vacation rule', () => {
+  it('merges extra conditions without dropping the seller rules', () => {
     const where = activeListing({ discountType: { not: null } });
-    expect(where.seller).toEqual({ isVacation: false });
+    expect(where.seller).toEqual({
+      isVacation: false,
+      user: { status: { not: 'BLOCKED' } },
+    });
     expect(where.isActive).toBe(true);
     expect(where.discountType).toEqual({ not: null });
   });
@@ -44,10 +69,13 @@ describe('activeListing()', () => {
     expect(a).not.toBe(ACTIVE_LISTING);
   });
 
-  it('lets a caller narrow, but the vacation rule survives a spread', () => {
+  it('lets a caller narrow, but the seller rules survive a spread', () => {
     // the shape used at the call sites: { id, ...ACTIVE_LISTING }
     const where = { id: 'product-1', ...ACTIVE_LISTING };
-    expect(where.seller).toEqual({ isVacation: false });
+    expect(where.seller).toEqual({
+      isVacation: false,
+      user: { status: { not: 'BLOCKED' } },
+    });
     expect(where.id).toBe('product-1');
   });
 });
