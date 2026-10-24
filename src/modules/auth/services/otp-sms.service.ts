@@ -14,6 +14,14 @@ export class OtpSmsService {
   private readonly templateId: string;
   private readonly messageTemplate: string;
 
+  /** The DLT-approved body, used whenever the configured one is unusable. */
+  static readonly DEFAULT_OTP_MESSAGE =
+    'Use OTP {#var#} to login to your Pharmabag account';
+
+  /** Placeholders the renderer knows how to substitute. */
+  static readonly OTP_PLACEHOLDER =
+    /\{otp\}|\[otp\]|<otp>|\{#var#\}|\{%otp%\}/gi;
+
   constructor(private readonly configService: ConfigService) {
     this.apiUrl =
       this.configService.get<string>('NIMBUS_API_URL') ||
@@ -37,13 +45,54 @@ export class OtpSmsService {
       this.configService.get<string>('NIMBUS_TEMPLATE_ID') ||
       '1707164786061344379';
 
-    this.messageTemplate =
-      this.configService.get<string>('NIMBUS_OTP_MESSAGE') ||
-      'Use OTP {#var#} to login to your Pharmabag account';
+    this.messageTemplate = this.resolveTemplate();
 
     if (!this.user || !this.password) {
       this.logger.warn('Nimbus SMS credentials (NIMBUS_USER/NIMBUS_KEY) missing!');
     }
+  }
+
+  /**
+   * NIMBUS_OTP_MESSAGE has to survive a trip through the .env file, and the
+   * DLT body contains a '#'. Unquoted, dotenv reads that as the start of an
+   * inline comment and silently truncates
+   *
+   *   NIMBUS_OTP_MESSAGE=Use OTP {#var#} to login to your Pharmabag account
+   *
+   * down to "Use OTP {". That is what shipped on 2026-10-24: the SMS went out
+   * with no code in it at all, and because the gateway still answered
+   * Status:"OK" nothing anywhere reported a problem.
+   *
+   * A body with no placeholder can never produce a usable OTP, so treat it as
+   * misconfiguration and fall back to the approved default rather than send
+   * nonsense to a customer.
+   */
+  private resolveTemplate(): string {
+    const configured = this.configService
+      .get<string>('NIMBUS_OTP_MESSAGE')
+      ?.trim();
+
+    if (!configured) {
+      return OtpSmsService.DEFAULT_OTP_MESSAGE;
+    }
+
+    // .lastIndex is shared state on a /g regex — test against a fresh one.
+    const hasPlaceholder = new RegExp(
+      OtpSmsService.OTP_PLACEHOLDER.source,
+      'i',
+    ).test(configured);
+
+    if (!hasPlaceholder) {
+      this.logger.error(
+        `NIMBUS_OTP_MESSAGE has no OTP placeholder (got ${JSON.stringify(
+          configured,
+        )}). If the value contains '#', it must be quoted in .env or dotenv ` +
+          'truncates it at the comment marker. Falling back to the default template.',
+      );
+      return OtpSmsService.DEFAULT_OTP_MESSAGE;
+    }
+
+    return configured;
   }
 
   // ==============================
@@ -61,7 +110,11 @@ export class OtpSmsService {
 
     // Robust replacement: handles {otp}, [otp], <otp>, {#var#}, or {%otp%} case-insensitively
     // We intentionally do not use \botp\b to avoid matching the literal word "OTP" in the template.
-    const message = this.messageTemplate.replace(/\{otp\}|\[otp\]|<otp>|\{#var#\}|\{%otp%\}/gi, otp);
+    // Built fresh each call: a shared /g regex carries .lastIndex between uses.
+    const message = this.messageTemplate.replace(
+      new RegExp(OtpSmsService.OTP_PLACEHOLDER.source, 'gi'),
+      otp,
+    );
 
     this.logger.log(`Final message being sent: ${message}`);
     this.logger.log(`Sending OTP to ${formattedPhone}`);
