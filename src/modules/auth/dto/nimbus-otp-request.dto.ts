@@ -13,7 +13,7 @@ export class NimbusDataDto {
   Sender: string;
 
   @ApiProperty({
-    example: 'Welcome to Pharmabag. Use OTP {otp} to login to your Pharmabag account',
+    example: 'Use OTP {#var#} to login to your Pharmabag account',
   })
   Message: string;
 
@@ -26,7 +26,7 @@ export class NimbusDataDto {
   @ApiProperty({ example: '1701163558888608648' })
   EntityId: string;
 
-  @ApiProperty({ example: '1707163835062147514' })
+  @ApiProperty({ example: '1707164786061344379' })
   TemplateId: string;
 
   @ApiProperty({ type: [String], example: ['9831864222'] })
