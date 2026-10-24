@@ -61,6 +61,39 @@ describe('OtpSmsService — DLT template', () => {
     expect(rendered).not.toContain('Welcome to Pharmabag');
   });
 
+  /**
+   * Shipped broken on 2026-10-24. The body contains a '#', and unquoted in
+   * .env dotenv reads that as an inline comment, so
+   *   NIMBUS_OTP_MESSAGE=Use OTP {#var#} to login to your Pharmabag account
+   * was delivered to the app as "Use OTP {". Every SMS went out with no code
+   * in it, and the gateway still answered Status:"OK", so nothing alerted.
+   */
+  it('falls back to the default when the configured body lost its placeholder', () => {
+    const service = makeService({ NIMBUS_OTP_MESSAGE: 'Use OTP {' });
+
+    expect(service.getTemplate()).toBe(
+      'Use OTP {#var#} to login to your Pharmabag account',
+    );
+  });
+
+  it('falls back when the configured body is blank or whitespace', () => {
+    expect(makeService({ NIMBUS_OTP_MESSAGE: '   ' }).getTemplate()).toBe(
+      'Use OTP {#var#} to login to your Pharmabag account',
+    );
+  });
+
+  it('never renders a message without a substituted code', () => {
+    // Whatever is configured, the rendered body must carry the digits.
+    for (const configured of ['Use OTP {', '', 'no placeholder here']) {
+      const service = makeService({ NIMBUS_OTP_MESSAGE: configured });
+      const rendered = service
+        .getTemplate()
+        .replace(new RegExp(OtpSmsService.OTP_PLACEHOLDER.source, 'gi'), '483921');
+      expect(rendered).toContain('483921');
+      expect(rendered).not.toContain('#var#');
+    }
+  });
+
   it('still honours an env override for the template', () => {
     const service = makeService({
       NIMBUS_OTP_MESSAGE: 'Use OTP {#var#} to sign in',

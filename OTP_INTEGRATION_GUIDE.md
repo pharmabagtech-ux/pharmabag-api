@@ -16,7 +16,7 @@ NIMBUS_SENDER=PHABAG
 NIMBUS_REFERENCE_ID=1564879
 NIMBUS_ENTITY_ID=1701163558888608648
 NIMBUS_TEMPLATE_ID=1707164786061344379
-NIMBUS_OTP_MESSAGE=Use OTP {#var#} to login to your Pharmabag account
+NIMBUS_OTP_MESSAGE="Use OTP {#var#} to login to your Pharmabag account"
 ```
 
 ## Configuration Details
