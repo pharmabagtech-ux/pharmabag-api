@@ -15,8 +15,8 @@ NIMBUS_KEY=010Qftn20u6Y7M31aWNY
 NIMBUS_SENDER=PHABAG
 NIMBUS_REFERENCE_ID=1564879
 NIMBUS_ENTITY_ID=1701163558888608648
-NIMBUS_TEMPLATE_ID=1707163835062147514
-NIMBUS_OTP_MESSAGE=Welcome to Pharmabag. Use OTP {otp} to login to your Pharmabag account
+NIMBUS_TEMPLATE_ID=1707164786061344379
+NIMBUS_OTP_MESSAGE=Use OTP {#var#} to login to your Pharmabag account
 ```
 
 ## Configuration Details
@@ -29,8 +29,8 @@ NIMBUS_OTP_MESSAGE=Welcome to Pharmabag. Use OTP {otp} to login to your Pharmaba
 | `NIMBUS_SENDER` | No | `PHABAG` | SMS sender ID (brand name) |
 | `NIMBUS_REFERENCE_ID` | No | `1564879` | Reference ID for API calls |
 | `NIMBUS_ENTITY_ID` | No | `1701163558888608648` | Entity ID for compliance |
-| `NIMBUS_TEMPLATE_ID` | No | `1707163835062147514` | SMS template ID |
-| `NIMBUS_OTP_MESSAGE` | No | `Welcome to Pharmabag...` | OTP message template (use `{otp}` placeholder) |
+| `NIMBUS_TEMPLATE_ID` | No | `1707164786061344379` | SMS template ID |
+| `NIMBUS_OTP_MESSAGE` | No | `Use OTP {#var#} to login...` | OTP message template (use `{otp}` placeholder) |
 
 ## API Request Format
 
@@ -44,11 +44,11 @@ The service automatically formats requests according to Nimbus IT specifications
   },
   "Data": {
     "Sender": "PHABAG",
-    "Message": "Welcome to Pharmabag. Use OTP 123456 to login to your Pharmabag account",
+    "Message": "Use OTP 123456 to login to your Pharmabag account",
     "Flash": "0",
     "ReferenceId": "1564879",
     "EntityId": "1701163558888608648",
-    "TemplateId": "1707163835062147514",
+    "TemplateId": "1707164786061344379",
     "Mobile": ["9831864222"]
   }
 }
@@ -117,7 +117,7 @@ env:
   NIMBUS_SENDER: PHABAG
   NIMBUS_REFERENCE_ID: 1564879
   NIMBUS_ENTITY_ID: 1701163558888608648
-  NIMBUS_TEMPLATE_ID: 1707163835062147514
+  NIMBUS_TEMPLATE_ID: 1707164786061344379
 ```
 
 ### 2. Docker Deployment

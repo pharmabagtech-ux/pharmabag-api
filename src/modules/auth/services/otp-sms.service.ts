@@ -29,11 +29,17 @@ export class OtpSmsService {
 
     this.sender = this.configService.get<string>('NIMBUS_SENDER') || 'PHABAG';
     this.entityId = this.configService.get<string>('NIMBUS_ENTITY_ID') || '';
-    this.templateId = this.configService.get<string>('NIMBUS_TEMPLATE_ID') || '';
+
+    // DLT template registered on the jaipharmabiz account. The message body
+    // below must match the registered text character for character — operators
+    // silently drop messages whose text drifts from the approved template.
+    this.templateId =
+      this.configService.get<string>('NIMBUS_TEMPLATE_ID') ||
+      '1707164786061344379';
 
     this.messageTemplate =
       this.configService.get<string>('NIMBUS_OTP_MESSAGE') ||
-      'Welcome to Pharmabag. Use OTP {otp} to login to your Pharmabag account';
+      'Use OTP {#var#} to login to your Pharmabag account';
 
     if (!this.user || !this.password) {
       this.logger.warn('Nimbus SMS credentials (NIMBUS_USER/NIMBUS_KEY) missing!');
