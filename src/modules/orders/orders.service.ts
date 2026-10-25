@@ -41,7 +41,9 @@ export class OrdersService {
                   select: {
                     id: true,
                     verificationStatus: true,
-                    companyName: true,
+                    // companyName was selected here and read by nothing. An
+                    // unused select is how identity reaches a response by
+                    // accident later.
                     // read by the vacation guard below
                     isVacation: true,
                   },
@@ -309,12 +311,15 @@ export class OrdersService {
                 images: { select: { url: true }, take: 1 },
               },
             },
+            /**
+             * Buyers never learn who the seller is. PharmaBag is the
+             * counterparty; a supplier's name plus their city is enough for a
+             * buyer to go around the marketplace. The id is an opaque UUID and
+             * the rating carries no identity, so both stay.
+             */
             seller: {
               select: {
                 id: true,
-                companyName: true,
-                city: true,
-                state: true,
               },
             },
           },
@@ -349,8 +354,9 @@ export class OrdersService {
                 images: { select: { url: true }, take: 1 },
               },
             },
+            // Identity withheld from buyers; see the note above.
             seller: {
-              select: { id: true, companyName: true },
+              select: { id: true },
             },
           },
         },
@@ -394,12 +400,11 @@ export class OrdersService {
                 images: { select: { id: true, url: true }, take: 1 },
               },
             },
+            // Identity withheld from buyers; see the note above. Rating
+            // stays — it describes service, not who provides it.
             seller: {
               select: {
                 id: true,
-                companyName: true,
-                city: true,
-                state: true,
                 rating: true,
               },
             },
@@ -475,6 +480,21 @@ export class OrdersService {
         sellerTotal: Math.round(sellerSubtotal),
         totalGstAmount: Math.round(sellerGst),
         totalAmount: Math.round(sellerSubtotal + sellerGst),
+      };
+    }
+
+    /**
+     * 5. The settlement record is the platform paying the seller. It carries
+     *    the bank payout reference and a link to the payout proof document,
+     *    and it was being returned to the BUYER on their own order — so a
+     *    buyer could read PharmaBag's commercial terms with its supplier.
+     *
+     *    Admin keeps it; that screen is where payouts are managed.
+     */
+    if (user.role === Role.BUYER) {
+      return {
+        ...order,
+        items: order.items.map(({ settlement, ...item }: any) => item),
       };
     }
 
