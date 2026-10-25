@@ -641,6 +641,31 @@ export class OrdersService {
       );
     }
 
+    /**
+     * A seller may only move an order that is entirely theirs.
+     *
+     * Checkout puts every seller's lines into ONE order, and the status lives
+     * on that order rather than per line — so this endpoint writes a value
+     * that speaks for all of them. Owning *some* of the order was the only
+     * check, which meant a seller holding one cheap line in a three-seller bag
+     * could drive the whole thing to DELIVERED (minting settlements for the
+     * other two for goods they never shipped) or cancel their sales outright.
+     *
+     * There is no per-seller fulfilment status to fall back on, so a shared
+     * order is simply not something one seller can decide. Admin still can.
+     */
+    const totalItemsInOrder = await this.prisma.orderItem.count({
+      where: { orderId },
+    });
+
+    if (sellerItems.length !== totalItemsInOrder) {
+      throw new ForbiddenException(
+        'This order contains items from more than one seller, so its status ' +
+          'cannot be changed by a single seller. Please contact PharmaBag ' +
+          'support to update it.',
+      );
+    }
+
     // 3. Fetch current order
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -754,6 +779,37 @@ export class OrdersService {
     // 2. Permission check
     if (role === Role.BUYER && order.buyerId !== userId) {
       throw new ForbiddenException('You do not have permission to cancel this order');
+    }
+
+    /**
+     * Sellers were not checked here at all — the only branch tested for BUYER,
+     * so a seller reaching this method passed straight through and could
+     * cancel an order containing other sellers' goods, restoring their stock
+     * and destroying their sales.
+     *
+     * Same rule as updateOrderStatus: a seller may only cancel an order that
+     * is entirely theirs. Admin is unaffected.
+     */
+    if (role === Role.SELLER) {
+      const seller = await this.prisma.sellerProfile.findUnique({
+        where: { userId },
+        select: { id: true },
+      });
+
+      if (!seller) {
+        throw new ForbiddenException('You do not have permission to cancel this order');
+      }
+
+      const ownsEveryItem = order.items.every(
+        (item) => item.sellerId === seller.id,
+      );
+
+      if (!ownsEveryItem) {
+        throw new ForbiddenException(
+          'This order contains items from more than one seller, so it cannot ' +
+            'be cancelled by a single seller. Please contact PharmaBag support.',
+        );
+      }
     }
 
     // 3. Status validation
