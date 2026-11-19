@@ -9,7 +9,7 @@ import { ACTIVE_LISTING, activeListing } from './active-listing';
  *
  * These pin the shape of the rule. The reason it belongs in one constant is
  * that this codebase has twice shipped a listing rule to some surfaces and not
- * others (the 20k minimum, the scheme lot stepping).
+ * others (the order-value minimum, the scheme lot stepping).
  */
 /**
  * The same gap again, one field over. Blocking a seller set User.status =

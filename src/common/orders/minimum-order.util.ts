@@ -1,8 +1,9 @@
 /**
- * The Rs 20,000 minimum.
+ * The Rs 10,000 minimum.
  *
- * A buyer must take at least Rs 20,000 of any single listing. The rule is PER
- * LINE and GST-INCLUSIVE (settled 2026-08-01).
+ * A buyer must take at least Rs 10,000 of any single listing. The rule is PER
+ * LINE and GST-INCLUSIVE (settled 2026-08-01; the floor was lowered from
+ * Rs 20,000 to Rs 10,000 on 2026-11-19).
  *
  * It has only ever been enforced in the browser: the storefront works out the
  * qualifying quantity and the stepper refuses to go below it. The API never
@@ -13,10 +14,10 @@
  *
  * `cart.service.ts` did compare against `product.minimumOrderQuantity`, but
  * that is the seller's stored figure, written when the listing was created and
- * never recomputed since. Around a hundred live listings still carry a value
- * below what Rs 20,000 now requires, so that check passes orders this one
- * rejects. Both are kept: the seller may legitimately demand MORE than the
- * platform floor, never less.
+ * never recomputed since. Live listings still carry values below what
+ * Rs 10,000 now requires, so that check passes orders this one rejects. Both
+ * are kept: the seller may legitimately demand MORE than the platform floor,
+ * never less.
  *
  * The figures used here are the ones the invoice is built from - the cart
  * item's own `unitPrice` snapshot and the LISTING's `gstPercent` (never the
@@ -26,7 +27,7 @@
  */
 
 /** Platform floor, per order line, inclusive of GST. */
-export const MIN_ORDER_VALUE_INR = 20000;
+export const MIN_ORDER_VALUE_INR = 10000;
 
 /**
  * Charged when a listing carries no GST of its own. Must stay in step with
@@ -37,8 +38,8 @@ export const FALLBACK_GST_PERCENT = 12;
 
 /**
  * Float dust guard. Quantity x price x tax rarely lands on an exact rupee, and
- * a line the storefront computed as exactly Rs 20,000 can arrive here as
- * 19999.999999996. Rounding to paise before comparing keeps this check on the
+ * a line the storefront computed as exactly Rs 10,000 can arrive here as
+ * 9999.999999996. Rounding to paise before comparing keeps this check on the
  * lenient side of the boundary, which is the only safe direction: rejecting a
  * valid order is a worse failure than accepting one a fraction of a paisa
  * short.
@@ -60,7 +61,7 @@ export function lineValueWithGst(
   return round2(quantity * unitPrice * (1 + gst / 100));
 }
 
-/** Whether a line clears the Rs 20,000 floor. */
+/** Whether a line clears the Rs 10,000 floor. */
 export function meetsMinimumOrderValue(
   quantity: number,
   unitPrice: number,
@@ -96,7 +97,7 @@ export function listingLotSize(
 }
 
 /**
- * Smallest quantity whose GST-inclusive line value reaches Rs 20,000, rounded
+ * Smallest quantity whose GST-inclusive line value reaches Rs 10,000, rounded
  * UP to a whole scheme lot.
  *
  * Derived by division and then VERIFIED by the same comparison the guard uses,

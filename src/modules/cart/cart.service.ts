@@ -81,7 +81,7 @@ export class CartService {
     //    GST is added later from the listing's own gstPercent, so this stays
     //    GST-exclusive. Falls back to MRP if the price cannot be derived.
     //
-    //    Derived here rather than just before the write, because the Rs 20,000
+    //    Derived here rather than just before the write, because the Rs 10,000
     //    minimum below is a rule about VALUE and cannot be checked without it.
     const unitPrice =
       calculateNetUnitPrice(
@@ -95,8 +95,8 @@ export class CartService {
     //
     //    `product.minimumOrderQuantity` alone is not enough: it is the
     //    seller's stored figure, written when the listing was created and
-    //    never recomputed, and around a hundred live listings carry a value
-    //    below what the Rs 20,000 rule now requires. Taking the higher of the
+    //    never recomputed, and live listings carry values below what the
+    //    Rs 10,000 rule now requires. Taking the higher of the
     //    two enforces the platform floor without overriding a seller who
     //    legitimately demands more.
     const gstPercent = (product as any).gstPercent;
@@ -311,7 +311,7 @@ export class CartService {
         (cartItem.product as any).discountMeta,
       ) ?? cartItem.product.mrp;
 
-    // 4. Validate minimum order quantity — Rs 20,000 floor or the seller's own
+    // 4. Validate minimum order quantity — Rs 10,000 floor or the seller's own
     //    stored minimum, whichever is higher.
     const gstPercent = (cartItem.product as any).gstPercent;
     const requiredQuantity = effectiveMinimumQuantity(

@@ -29,7 +29,7 @@ import { Prisma } from '@prisma/client';
  *
  * It lives in one constant rather than being written out at each call site
  * because that is exactly how it went missing. Two rules in this codebase have
- * already shipped to some surfaces and not others (the 20k minimum and the
+ * already shipped to some surfaces and not others (the order-value minimum and the
  * scheme lot stepping); a listing-visibility rule copied by hand into eight
  * places would go the same way. Import this instead.
  */

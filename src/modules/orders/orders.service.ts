@@ -133,7 +133,7 @@ export class OrdersService {
       }
 
       /**
-       * The Rs 20,000 minimum, per line and GST-inclusive.
+       * The Rs 10,000 minimum, per line and GST-inclusive.
        *
        * This is the gate that matters. The storefront has always enforced it,
        * but nothing here did, so any order reaching this method by another
@@ -155,7 +155,7 @@ export class OrdersService {
       );
 
       if (item.quantity < required) {
-        // Say which rule bound. A buyer told they are short of Rs 20,000 when
+        // Say which rule bound. A buyer told they are short of Rs 10,000 when
         // in fact the seller demands more than that has no way to act on it.
         if (!meetsMinimumOrderValue(item.quantity, item.unitPrice, gstPercent)) {
           throw new BadRequestException(

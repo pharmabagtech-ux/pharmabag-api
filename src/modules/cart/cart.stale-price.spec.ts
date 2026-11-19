@@ -12,6 +12,12 @@ import { CartService } from './cart.service';
  * showing, fresh, everywhere else. `updateCartItem` alone kept validating and
  * persisting against the stale Rs 163.59 snapshot instead of the current
  * listing, so the check the buyer saw contradicted the bag on screen.
+ *
+ * The figures above are the original 2026-08-07 report, made when the floor
+ * was Rs 20,000. The floor is now Rs 10,000, so the quantities below moved
+ * down to straddle it: at 57 units the LIVE price clears Rs 10,000
+ * (Rs 10,136.20) and the STALE one does not (Rs 9,790.86). Left at 113 both
+ * prices would clear the new floor and these tests would prove nothing.
  */
 const PRODUCT = {
   id: 'listing-1',
@@ -54,13 +60,13 @@ const makeService = (cartItemOverrides: Record<string, any> = {}) => {
 };
 
 describe('CartService.updateCartItem — price freshness', () => {
-  it('validates the Rs 20,000 minimum against the LIVE listing price, not the stale snapshot', async () => {
+  it('validates the Rs 10,000 minimum against the LIVE listing price, not the stale snapshot', async () => {
     const { service } = makeService();
 
-    // 113 units at the CURRENT price (169.36) clears Rs 20,000
-    // (20,094.56); at the stale snapshot (163.59) it does not (19,409.95).
+    // 57 units at the CURRENT price (169.36) clears Rs 10,000 (10,136.20);
+    // at the stale snapshot (163.59) it does not (9,790.86).
     await expect(
-      service.updateCartItem('user-1', 'item-1', { quantity: 113 } as any),
+      service.updateCartItem('user-1', 'item-1', { quantity: 57 } as any),
     ).resolves.toBeDefined();
   });
 
@@ -81,13 +87,13 @@ describe('CartService.updateCartItem — price freshness', () => {
   });
 
   it('does not reject a quantity the stale price alone would have blocked', async () => {
-    // At the stale 163.59 rate, 113 units falls short and used to demand 117.
+    // At the stale 163.59 rate, 57 units falls short and would demand more.
     // At the live 169.36 rate it already clears the floor - the fix must not
-    // still be quoting a "need 117" style message here.
+    // still be quoting a "need more units" style message here.
     const { service } = makeService();
 
     await expect(
-      service.updateCartItem('user-1', 'item-1', { quantity: 113 } as any),
+      service.updateCartItem('user-1', 'item-1', { quantity: 57 } as any),
     ).resolves.not.toMatchObject({ error: expect.anything() });
   });
 });

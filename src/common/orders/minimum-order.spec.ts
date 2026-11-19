@@ -8,7 +8,7 @@ import {
 } from './minimum-order.util';
 
 /**
- * The Rs 20,000 rule lived only in the browser. These pin the server-side
+ * The Rs 10,000 rule lived only in the browser. These pin the server-side
  * version to the same two decisions the storefront was fixed to follow:
  * the value is GST-INCLUSIVE and PER LINE, and the lot is `buy`, not
  * `buy + get`.
@@ -37,12 +37,14 @@ describe('lineValueWithGst', () => {
 });
 
 describe('meetsMinimumOrderValue', () => {
-  it('accepts a line exactly on Rs 20,000', () => {
-    // 200 x 89.2857... is awkward on purpose; use a clean GST-inclusive hit
-    expect(meetsMinimumOrderValue(200, 89.29, 12)).toBe(true);
-    expect(lineValueWithGst(200, 89.29, 12)).toBeGreaterThanOrEqual(
+  it('accepts a line sitting right on Rs 10,000', () => {
+    // 100 x 89.29 incl. 12% = Rs 10,000.48 - the first quantity over the line.
+    expect(meetsMinimumOrderValue(100, 89.29, 12)).toBe(true);
+    expect(lineValueWithGst(100, 89.29, 12)).toBeGreaterThanOrEqual(
       MIN_ORDER_VALUE_INR,
     );
+    // ...and one unit less genuinely falls short, so this is the boundary.
+    expect(meetsMinimumOrderValue(99, 89.29, 12)).toBe(false);
   });
 
   it('rejects a line one unit short', () => {
@@ -52,8 +54,10 @@ describe('meetsMinimumOrderValue', () => {
   });
 
   it('does not reject on float dust just under the boundary', () => {
-    // Contrived so quantity x price x tax lands microscopically below 20000.
-    const price = 20000 / 1.12 / 137;
+    // Contrived so quantity x price x tax lands microscopically below the
+    // floor. Derived FROM the constant so it stays a boundary test if the
+    // floor ever moves again.
+    const price = MIN_ORDER_VALUE_INR / 1.12 / 137;
     expect(meetsMinimumOrderValue(137, price, 12)).toBe(true);
   });
 });
@@ -106,7 +110,7 @@ describe('minimumQuantityForValue', () => {
   });
 
   it('never returns a quantity below the lot itself', () => {
-    // An expensive listing clears Rs 20,000 in 2 units but steps in 4s.
+    // An expensive listing clears Rs 10,000 in a single unit but steps in 4s.
     const qty = minimumQuantityForValue(10000, 12, 4);
     expect(qty).toBe(4);
   });
@@ -154,13 +158,13 @@ describe('minimumQuantityForValue', () => {
 
 describe('effectiveMinimumQuantity', () => {
   it('takes the seller stored minimum when it is the higher of the two', () => {
-    // Rs 20,000 needs ~102 units here; the seller demands 500.
+    // Rs 10,000 needs ~46 units here; the seller demands 500.
     expect(effectiveMinimumQuantity(196.06, 12, 500)).toBe(500);
   });
 
   it('takes the platform floor when the stored minimum is stale and lower', () => {
     // This is the live condition: ~100 listings carry a stored minimum
-    // written before the Rs 20,000 rule, well below what it now requires.
+    // written before the Rs 10,000 rule, well below what it now requires.
     const floor = minimumQuantityForValue(196.06, 12);
     expect(effectiveMinimumQuantity(196.06, 12, 10)).toBe(floor);
     expect(floor).toBeGreaterThan(10);
