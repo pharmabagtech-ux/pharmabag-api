@@ -28,6 +28,23 @@ const PUBLIC_SELECT = {
   linkUrl: true,
 } satisfies Prisma.PromoBannerSelect;
 
+/**
+ * The last word on "this banner goes somewhere", checked AFTER normalisation.
+ *
+ * `ArrayMinSize(1)` on the DTO is not sufficient on its own.
+ * `normalisePlacements` drops a CATEGORY entry that carries no categoryId, so
+ * `[{ scope: 'CATEGORY' }]` satisfies the DTO and still reduces to nothing.
+ * Checking the normalised result is the only place that sees what will
+ * actually be written.
+ */
+function assertPlaced(placements: NormalisedPlacement[]): void {
+  if (placements.length === 0) {
+    throw new BadRequestException(
+      'A banner must be shown somewhere: choose the homepage, all categories, or at least one category.',
+    );
+  }
+}
+
 @Injectable()
 export class BannersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -104,6 +121,7 @@ export class BannersService {
 
   async create(dto: CreateBannerDto) {
     const placements = normalisePlacements(dto.placements ?? []);
+    assertPlaced(placements);
     await this.assertCategoriesExist(placements);
 
     // New banners go to the END of the list. Prepending would silently demote
@@ -131,9 +149,15 @@ export class BannersService {
   async update(id: string, dto: UpdateBannerDto) {
     await this.assertExists(id);
 
+    // `undefined` still means "leave the existing placements alone" — that is
+    // what lets the admin list toggle Active without touching them. Only an
+    // explicit set is validated, and it may not be empty.
     const placements =
       dto.placements === undefined ? null : normalisePlacements(dto.placements);
-    if (placements) await this.assertCategoriesExist(placements);
+    if (placements) {
+      assertPlaced(placements);
+      await this.assertCategoriesExist(placements);
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // `position` is absent from the DTO on purpose: order is owned by the

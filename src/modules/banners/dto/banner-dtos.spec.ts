@@ -124,6 +124,43 @@ describe('banner DTOs accept the same field set', () => {
       /weight should not exist/,
     );
   });
+
+  /**
+   * A banner with no placement is invisible on every page and says so
+   * nowhere — see the header of banners.requires-placement.spec.ts.
+   */
+  it('refuses to CREATE a banner with an empty placement list', async () => {
+    await expectRejection(
+      { ...FULL_PAYLOAD, placements: [] },
+      CreateBannerDto,
+      /must be shown somewhere/,
+    );
+  });
+
+  it('refuses to CREATE a banner with no placements key at all', async () => {
+    const { placements, ...withoutPlacements } = FULL_PAYLOAD;
+    await expectRejection(withoutPlacements, CreateBannerDto, /placements/);
+  });
+
+  it('refuses to UPDATE a banner down to an empty placement list', async () => {
+    await expectRejection(
+      { placements: [] },
+      UpdateBannerDto,
+      /must be shown somewhere/,
+    );
+  });
+
+  /**
+   * The flip side, and the reason the rule lives on the array rather than on
+   * the presence of the key: the admin list toggles Active by sending a
+   * partial payload. Omitting `placements` must keep meaning "leave them
+   * alone", or that toggle would 400 on every banner.
+   */
+  it('still lets an update omit placements entirely', async () => {
+    await expect(
+      transform({ active: false }, UpdateBannerDto),
+    ).resolves.toEqual({ active: false });
+  });
 });
 
 describe('ReorderBannersDto', () => {

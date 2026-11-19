@@ -167,10 +167,13 @@ describe('BannersService.create', () => {
     prisma.promoBanner.findFirst.mockResolvedValue({ position: 4 });
     prisma.promoBanner.create.mockResolvedValue({ id: 'new' });
 
+    // A placement is required now — see banners.requires-placement.spec.ts.
+    // It is incidental here: this test is about `position`.
     await service(prisma).create({
       title: 'x',
       imageUrl: 'https://example.test/a.jpg',
       altText: 'x',
+      placements: [{ scope: 'HOMEPAGE' }],
     });
 
     expect(prisma.promoBanner.create.mock.calls[0][0].data.position).toBe(5);
@@ -184,6 +187,7 @@ describe('BannersService.create', () => {
       title: 'x',
       imageUrl: 'https://example.test/a.jpg',
       altText: 'x',
+      placements: [{ scope: 'HOMEPAGE' }],
     });
 
     expect(prisma.promoBanner.create.mock.calls[0][0].data.position).toBe(0);
